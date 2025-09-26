@@ -12,7 +12,8 @@ set -ouex pipefail
 # this installs a package from fedora repos
 #dnf5 install -y epson-inkjet-printer-escpr2
 rpm -i /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
-rpm -i /ctx/QualysCloudAgent.rpm
+rm -rf /usr/local/qualys
+rpm -i /ctx/qualys-cloud-agent-7.2.0-38.x86_64.rpm
 
 # Use a COPR Example:
 #
