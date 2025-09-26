@@ -11,7 +11,7 @@ set -ouex pipefail
 
 # this installs a package from fedora repos
 #dnf5 install -y epson-inkjet-printer-escpr2
-rpm -i epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
+rpm -i /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
 
 # Use a COPR Example:
 #
@@ -22,4 +22,4 @@ rpm -i epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
 
 #### Example for enabling a System Unit File
 
-systemctl enable podman.socket
+#systemctl enable podman.socket
