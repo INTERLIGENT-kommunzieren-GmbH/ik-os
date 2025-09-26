@@ -12,8 +12,12 @@ set -ouex pipefail
 # this installs a package from fedora repos
 #dnf5 install -y epson-inkjet-printer-escpr2
 rpm -i /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
-ls -la /usr/local/qualys
-rm -rf /usr/local/qualys
+mkdir -p /usr/local/qualys/cloud-agent/bin
+mkdir -p /usr/local/qualys/cloud-agent/data
+mkdir -p /usr/local/qualys/cloud-agent/data/manifests
+mkdir -p /etc/qualys/cloud-agent
+mkdir -p /etc/qualys/cloud-agent-defaults
+mkdir -p /var/log/qualys
 rpm -i /ctx/qualys-cloud-agent-7.2.0-38.x86_64.rpm
 
 # Use a COPR Example:
