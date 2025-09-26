@@ -12,6 +12,7 @@ set -e
 # this installs a package from fedora repos
 #dnf5 install -y epson-inkjet-printer-escpr2
 rpm -i /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
+stat /usr/local
 mkdir -p /usr/local/qualys/cloud-agent/bin
 mkdir -p /usr/local/qualys/cloud-agent/data
 mkdir -p /usr/local/qualys/cloud-agent/data/manifests
