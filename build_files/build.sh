@@ -18,7 +18,7 @@ mkdir -p /var/usrlocal/qualys/cloud-agent/data/manifests
 mkdir -p /etc/qualys/cloud-agent
 mkdir -p /etc/qualys/cloud-agent-defaults
 mkdir -p /var/log/qualys
-rpm -i /ctx/qualys-cloud-agent-7.2.0-38.x86_64.rpm
+rpm -i /ctx/QualysCloudAgent.rpm
 
 # Use a COPR Example:
 #
