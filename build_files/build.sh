@@ -11,14 +11,14 @@ set -e
 
 # this installs a package from fedora repos
 dnf5 install -y mc
-rpm -i /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
-mkdir -p /var/usrlocal/qualys/cloud-agent/bin
-mkdir -p /var/usrlocal/qualys/cloud-agent/data
-mkdir -p /var/usrlocal/qualys/cloud-agent/data/manifests
-mkdir -p /etc/qualys/cloud-agent
-mkdir -p /etc/qualys/cloud-agent-defaults
-mkdir -p /var/log/qualys
-rpm -i /ctx/QualysCloudAgent.rpm
+rpm-ostree install /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
+#mkdir -p /var/usrlocal/qualys/cloud-agent/bin
+#mkdir -p /var/usrlocal/qualys/cloud-agent/data
+#mkdir -p /var/usrlocal/qualys/cloud-agent/data/manifests
+#mkdir -p /etc/qualys/cloud-agent
+#mkdir -p /etc/qualys/cloud-agent-defaults
+#mkdir -p /var/log/qualys
+rpm-ostree install /ctx/QualysCloudAgent.rpm
 
 # Use a COPR Example:
 #
