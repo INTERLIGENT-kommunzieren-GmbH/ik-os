@@ -20,6 +20,19 @@ mkdir -p /etc/qualys/cloud-agent-defaults
 mkdir -p /var/log/qualys
 rpm-ostree install /ctx/QualysCloudAgent.rpm
 
+cat | tee /files/tmpfiles/epson.conf <<EOF
+# Tmpfiles for Epson Inkjet Driver
+L /var/opt/epson-inkjet-printer-escpr/lib64/libescpr.so     - - - - libescpr.so.1.0.0
+L /var/opt/epson-inkjet-printer-escpr/lib64/libescpr.so.1   - - - - libescpr.so.1.0.0
+EOF
+
+cat | tee /usr/lib/tmpfiles.d/qualys.conf <<EOF
+# Tmpfiles for Qualys Cloud Agent
+L /var/usrlocal/qualys/cloud-agent/lib/libPocoCrypto.so     - - - - libPocoCrypto.so.111
+L /var/usrlocal/qualys/cloud-agent/lib/libPocoFoundation.so - - - - libPocoFoundation.so.111
+L /var/usrlocal/qualys/cloud-agent/lib/libPocoJSON.so       - - - - libPocoJSON.so.111
+EOF
+
 # Use a COPR Example:
 #
 # dnf5 -y copr enable ublue-os/staging
@@ -30,3 +43,4 @@ rpm-ostree install /ctx/QualysCloudAgent.rpm
 #### Example for enabling a System Unit File
 
 #systemctl enable podman.socket
+systemctl enable qualys-cloud-agent.service
