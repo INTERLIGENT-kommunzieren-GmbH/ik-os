@@ -249,6 +249,42 @@ echo "Cleaning up compatibility workarounds..."
 rm -f /sbin/chkconfig
 echo "Cleanup completed"
 
+### Install CA Certificate
+# Install the Interligent CA certificate (CA-IK) to the system trust store
+# This allows applications to validate certificates signed by the Interligent CA
+# without requiring manual certificate installation on each system.
+# Following immutable OS principles, this is integrated into the base image.
+echo "Installing CA-IK certificate to system trust store..."
+
+# Check if CA certificate exists
+if [ -f "/ctx/CA-IK.crt" ]; then
+    echo "Found CA-IK.crt, installing to system certificate trust store..."
+
+    # Ensure the ca-trust anchors directory exists
+    # This is the standard location for custom CA certificates in Fedora/RHEL
+    mkdir -p /etc/pki/ca-trust/source/anchors
+
+    # Copy the CA certificate to the trust anchors directory
+    # The certificate will be automatically included in the system trust bundle
+    cp /ctx/CA-IK.crt /etc/pki/ca-trust/source/anchors/CA-IK.crt
+
+    # Set proper permissions for the certificate (readable by all, writable by root)
+    chmod 644 /etc/pki/ca-trust/source/anchors/CA-IK.crt
+
+    # Update the system certificate trust store
+    # This regenerates the trust bundles used by applications (OpenSSL, NSS, etc.)
+    update-ca-trust
+
+    echo "CA-IK certificate installed successfully and trust store updated"
+    echo "Certificate location: /etc/pki/ca-trust/source/anchors/CA-IK.crt"
+    echo "Certificate subject: DC=com, DC=interligent, DC=intern, CN=CA-IK"
+    echo "Valid until: Dec 5 14:24:12 2028 GMT"
+else
+    echo "Warning: CA-IK.crt file not found, skipping CA certificate installation"
+fi
+
+echo "CA certificate installation completed"
+
 ### Configure NetworkManager VPN Connection
 echo "Configuring NetworkManager VPN connection..."
 
