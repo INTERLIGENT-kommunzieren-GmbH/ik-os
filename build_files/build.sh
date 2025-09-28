@@ -35,7 +35,7 @@ fi
 # - Agent installation and file extraction happens during image build
 # - Agent activation is deferred to first boot when systemd is available
 # - Activation configuration is stored in /etc/qualys/cloud-agent/activation.conf
-# - First-boot activation script is created at /var/usrlocal/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+# - First-boot activation script is created at /usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh (runtime: /var/usrlocal)
 # - Systemd service is configured to run activation script before starting the agent
 # - Activation flag prevents re-activation on subsequent boots
 #
@@ -47,11 +47,31 @@ fi
 #
 
 # Create necessary directories for Qualys Cloud Agent
-# Use /usr/local which is symlinked to /var/usrlocal in immutable OS
-mkdir -p /usr/local/qualys/cloud-agent/bin
-mkdir -p /usr/local/qualys/cloud-agent/data
-mkdir -p /usr/local/qualys/cloud-agent/data/manifests
-mkdir -p /usr/local/qualys/cloud-agent/lib
+# Check and handle /usr/local symlink in immutable OS
+echo "Checking /usr/local status..."
+if [ -L "/usr/local" ]; then
+    echo "/usr/local is a symlink pointing to: $(readlink /usr/local)"
+    # Create directories via the symlink target
+    USRLOCAL_TARGET=$(readlink /usr/local)
+    mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/bin"
+    mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/data"
+    mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/data/manifests"
+    mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/lib"
+elif [ -d "/usr/local" ]; then
+    echo "/usr/local is a directory"
+    mkdir -p /usr/local/qualys/cloud-agent/bin
+    mkdir -p /usr/local/qualys/cloud-agent/data
+    mkdir -p /usr/local/qualys/cloud-agent/data/manifests
+    mkdir -p /usr/local/qualys/cloud-agent/lib
+else
+    echo "/usr/local does not exist, creating directory structure"
+    mkdir -p /usr/local/qualys/cloud-agent/bin
+    mkdir -p /usr/local/qualys/cloud-agent/data
+    mkdir -p /usr/local/qualys/cloud-agent/data/manifests
+    mkdir -p /usr/local/qualys/cloud-agent/lib
+fi
+
+# Create other necessary directories
 mkdir -p /etc/qualys/cloud-agent
 mkdir -p /etc/qualys/cloud-agent-defaults
 
@@ -87,16 +107,25 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     ls -la usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "usr/local/qualys/cloud-agent/bin/ not found"
 
     # Copy files to their destinations
-    # Copy to /usr/local first (which is the proper location for immutable OS)
-    if [ -d "usr/local" ]; then
-        echo "Copying usr/local contents to /usr/local..."
-        cp -r usr/local/* /usr/local/ 2>/dev/null || true
+    # Determine the correct target for /usr/local content
+    if [ -L "/usr/local" ]; then
+        USRLOCAL_TARGET=$(readlink /usr/local)
+        echo "Using symlink target for /usr/local: $USRLOCAL_TARGET"
+    else
+        USRLOCAL_TARGET="/usr/local"
+        echo "Using direct path for /usr/local: $USRLOCAL_TARGET"
     fi
 
-    # Handle var/usrlocal if it exists in the RPM
+    # Copy to the appropriate usr/local location
+    if [ -d "usr/local" ]; then
+        echo "Copying usr/local contents to $USRLOCAL_TARGET..."
+        cp -r usr/local/* "$USRLOCAL_TARGET/" 2>/dev/null || true
+    fi
+
+    # Handle var/usrlocal if it exists in the RPM (copy to same target)
     if [ -d "var/usrlocal" ]; then
-        echo "Copying var/usrlocal contents to /usr/local..."
-        cp -r var/usrlocal/* /usr/local/ 2>/dev/null || true
+        echo "Copying var/usrlocal contents to $USRLOCAL_TARGET..."
+        cp -r var/usrlocal/* "$USRLOCAL_TARGET/" 2>/dev/null || true
     fi
 
     # Copy etc files
@@ -112,11 +141,19 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
 
     # Debug: Verify files were copied correctly
     echo "Verifying file copy results:"
-    ls -la /usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "/usr/local/qualys/cloud-agent/bin/ not found after copy"
-    ls -la /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found after copy"
-
-    # Set proper permissions
-    chmod +x /usr/local/qualys/cloud-agent/bin/* 2>/dev/null || true
+    if [ -L "/usr/local" ]; then
+        USRLOCAL_TARGET=$(readlink /usr/local)
+        echo "Checking symlink target: $USRLOCAL_TARGET"
+        ls -la "$USRLOCAL_TARGET/qualys/cloud-agent/bin/" 2>/dev/null || echo "$USRLOCAL_TARGET/qualys/cloud-agent/bin/ not found after copy"
+        ls -la "$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-cloud-agent.sh" 2>/dev/null || echo "qualys-cloud-agent.sh not found after copy"
+        # Set proper permissions
+        chmod +x "$USRLOCAL_TARGET/qualys/cloud-agent/bin/"* 2>/dev/null || true
+    else
+        ls -la /usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "/usr/local/qualys/cloud-agent/bin/ not found after copy"
+        ls -la /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found after copy"
+        # Set proper permissions
+        chmod +x /usr/local/qualys/cloud-agent/bin/* 2>/dev/null || true
+    fi
 
     # Cleanup
     cd /
@@ -126,29 +163,40 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
 
     # Verify the Qualys agent script exists and is executable
     echo "=== FINAL VERIFICATION ==="
-    echo "Checking for Qualys agent script at: /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 
-    # Debug: Show directory structure
-    echo "Directory structure under /usr/local/qualys/:"
-    find /usr/local/qualys/ -type f -name "*qualys*" 2>/dev/null || echo "No qualys files found under /usr/local/qualys/"
-
-    # Debug: Check if the directory exists
-    if [ -d "/usr/local/qualys/cloud-agent/bin" ]; then
-        echo "Directory /usr/local/qualys/cloud-agent/bin exists, contents:"
-        ls -la /usr/local/qualys/cloud-agent/bin/
+    # Determine the correct path to check
+    if [ -L "/usr/local" ]; then
+        USRLOCAL_TARGET=$(readlink /usr/local)
+        QUALYS_BIN_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin"
+        QUALYS_SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+        echo "Checking for Qualys agent script at: $QUALYS_SCRIPT_PATH (via symlink)"
     else
-        echo "Directory /usr/local/qualys/cloud-agent/bin does not exist"
+        QUALYS_BIN_PATH="/usr/local/qualys/cloud-agent/bin"
+        QUALYS_SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+        echo "Checking for Qualys agent script at: $QUALYS_SCRIPT_PATH"
     fi
 
-    if [ ! -f "/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+    # Debug: Show directory structure
+    echo "Directory structure under qualys installation:"
+    find "$USRLOCAL_TARGET/qualys/" -type f -name "*qualys*" 2>/dev/null || echo "No qualys files found"
+
+    # Debug: Check if the directory exists
+    if [ -d "$QUALYS_BIN_PATH" ]; then
+        echo "Directory $QUALYS_BIN_PATH exists, contents:"
+        ls -la "$QUALYS_BIN_PATH/"
+    else
+        echo "Directory $QUALYS_BIN_PATH does not exist"
+    fi
+
+    if [ ! -f "$QUALYS_SCRIPT_PATH" ]; then
         echo "Error: Qualys agent script not found after installation"
-        echo "Expected location: /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+        echo "Expected location: $QUALYS_SCRIPT_PATH"
         exit 1
     fi
 
-    if [ ! -x "/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+    if [ ! -x "$QUALYS_SCRIPT_PATH" ]; then
         echo "Warning: Qualys agent script is not executable, fixing permissions..."
-        chmod +x /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh
+        chmod +x "$QUALYS_SCRIPT_PATH"
     fi
 
     echo "Qualys Cloud Agent installation verified successfully"
@@ -279,7 +327,16 @@ fi
 
 # Create first-boot activation script for post-deployment use
 echo "Creating Qualys Cloud Agent first-boot activation script..."
-cat > /usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh << 'EOF'
+
+# Determine the correct path for script creation
+if [ -L "/usr/local" ]; then
+    USRLOCAL_TARGET=$(readlink /usr/local)
+    SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
+else
+    SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
+fi
+
+cat > "$SCRIPT_PATH" << 'EOF'
 #!/bin/bash
 # Qualys Cloud Agent First-Boot Activation Script
 # This script handles activation on first boot when systemd is available
@@ -348,16 +405,31 @@ else
 fi
 EOF
 
-chmod +x /usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+# Set permissions for the activation script
+if [ -L "/usr/local" ]; then
+    USRLOCAL_TARGET=$(readlink /usr/local)
+    chmod +x "$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
+else
+    chmod +x /usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+fi
 echo "First-boot activation script created and made executable"
 
 # Verify Qualys agent installation without attempting activation
-if [ -x "/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+# Determine the correct path to check
+if [ -L "/usr/local" ]; then
+    USRLOCAL_TARGET=$(readlink /usr/local)
+    QUALYS_SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+else
+    QUALYS_SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+fi
+
+if [ -x "$QUALYS_SCRIPT_PATH" ]; then
     echo "✓ Qualys Cloud Agent installation verified successfully"
     echo "✓ Agent script is executable and ready for post-deployment activation"
     echo "✓ First-boot activation script created"
+    echo "✓ Installation path: $QUALYS_SCRIPT_PATH"
 else
-    echo "✗ Warning: Qualys Cloud Agent script not found at /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+    echo "✗ Warning: Qualys Cloud Agent script not found at $QUALYS_SCRIPT_PATH"
 fi
 
 # Create systemd service override to ensure proper startup with first-boot activation
@@ -398,17 +470,27 @@ echo "Created systemd service override for Qualys Cloud Agent"
 echo "Performing final Qualys Cloud Agent validation..."
 echo ""
 echo "=== QUALYS CLOUD AGENT INSTALLATION SUMMARY ==="
-if [ -f "/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
-    echo "✓ Qualys agent script installed successfully"
+# Determine the correct paths for final validation
+if [ -L "/usr/local" ]; then
+    USRLOCAL_TARGET=$(readlink /usr/local)
+    QUALYS_SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+    ACTIVATION_SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
 else
-    echo "✗ ERROR: Qualys agent script not found - this will cause service startup failure"
+    QUALYS_SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+    ACTIVATION_SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
+fi
+
+if [ -f "$QUALYS_SCRIPT_PATH" ]; then
+    echo "✓ Qualys agent script installed successfully at $QUALYS_SCRIPT_PATH"
+else
+    echo "✗ ERROR: Qualys agent script not found at $QUALYS_SCRIPT_PATH - this will cause service startup failure"
     exit 1
 fi
 
-if [ -f "/usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh" ]; then
-    echo "✓ First-boot activation script created"
+if [ -f "$ACTIVATION_SCRIPT_PATH" ]; then
+    echo "✓ First-boot activation script created at $ACTIVATION_SCRIPT_PATH"
 else
-    echo "✗ ERROR: First-boot activation script not found"
+    echo "✗ ERROR: First-boot activation script not found at $ACTIVATION_SCRIPT_PATH"
     exit 1
 fi
 
