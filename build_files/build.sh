@@ -58,45 +58,71 @@ chmod +x /sbin/chkconfig
 
 # Check if Qualys RPM exists before installing
 if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
-    echo "Installing Qualys Cloud Agent RPM with compatibility workarounds..."
+    echo "Installing Qualys Cloud Agent RPM using manual extraction method..."
 
-    # Try installing with --noscripts first (preferred method)
-    if rpm-ostree install --noscripts /ctx/QualysCloudAgent.rpm; then
-        echo "Qualys Cloud Agent RPM installed successfully (scripts bypassed)"
-    else
-        echo "rpm-ostree installation failed, trying manual extraction method..."
+    # Manual extraction and installation
+    TEMP_DIR=$(mktemp -d)
+    cd "$TEMP_DIR"
 
-        # Fallback: Manual extraction and installation
-        TEMP_DIR=$(mktemp -d)
-        cd "$TEMP_DIR"
+    # Extract the RPM contents
+    echo "Extracting RPM contents..."
+    rpm2cpio /ctx/QualysCloudAgent.rpm | cpio -idmv
 
-        # Extract the RPM contents
-        rpm2cpio /ctx/QualysCloudAgent.rpm | cpio -idmv
+    # Debug: Show what was extracted
+    echo "Extracted directory structure:"
+    find . -name "qualys-cloud-agent.sh" -exec ls -la {} \; 2>/dev/null || echo "qualys-cloud-agent.sh not found in extraction"
+    ls -la usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "usr/local/qualys/cloud-agent/bin/ not found"
 
-        # Copy files to their destinations
-        if [ -d "var/usrlocal" ]; then
-            cp -r var/usrlocal/* /var/usrlocal/ 2>/dev/null || true
-        fi
-        if [ -d "etc" ]; then
-            cp -r etc/* /etc/ 2>/dev/null || true
-        fi
-        if [ -d "usr" ]; then
-            cp -r usr/* /usr/ 2>/dev/null || true
-        fi
-
-        # Set proper permissions
-        chmod +x /var/usrlocal/qualys/cloud-agent/bin/* 2>/dev/null || true
-
-        # Cleanup
-        cd /
-        rm -rf "$TEMP_DIR"
-
-        echo "Manual installation completed"
+    # Copy files to their destinations
+    if [ -d "var/usrlocal" ]; then
+        cp -r var/usrlocal/* /var/usrlocal/ 2>/dev/null || true
+    fi
+    if [ -d "etc" ]; then
+        cp -r etc/* /etc/ 2>/dev/null || true
+    fi
+    if [ -d "usr" ]; then
+        cp -r usr/* /usr/ 2>/dev/null || true
     fi
 
+    # Special handling for usr/local -> /var/usrlocal mapping (since /usr/local is symlinked to /var/usrlocal)
+    if [ -d "usr/local" ]; then
+        echo "Copying usr/local contents to /var/usrlocal..."
+        cp -r usr/local/* /var/usrlocal/ 2>/dev/null || true
+    fi
+
+    # Debug: Verify files were copied correctly
+    echo "Verifying file copy results:"
+    ls -la /var/usrlocal/qualys/cloud-agent/bin/ 2>/dev/null || echo "/var/usrlocal/qualys/cloud-agent/bin/ not found after copy"
+    ls -la /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found after copy"
+
+    # Set proper permissions
+    chmod +x /var/usrlocal/qualys/cloud-agent/bin/* 2>/dev/null || true
+
+    # Cleanup
+    cd /
+    rm -rf "$TEMP_DIR"
+
+    echo "Manual installation completed"
+
     # Verify the Qualys agent script exists and is executable
+    echo "=== FINAL VERIFICATION ==="
+    echo "Checking for Qualys agent script at: /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+
+    # Debug: Show directory structure
+    echo "Directory structure under /var/usrlocal/qualys/:"
+    find /var/usrlocal/qualys/ -type f -name "*qualys*" 2>/dev/null || echo "No qualys files found under /var/usrlocal/qualys/"
+
+    # Debug: Check if the directory exists
+    if [ -d "/var/usrlocal/qualys/cloud-agent/bin" ]; then
+        echo "Directory /var/usrlocal/qualys/cloud-agent/bin exists, contents:"
+        ls -la /var/usrlocal/qualys/cloud-agent/bin/
+    else
+        echo "Directory /var/usrlocal/qualys/cloud-agent/bin does not exist"
+    fi
+
     if [ ! -f "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
         echo "Error: Qualys agent script not found after installation"
+        echo "Expected location: /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
         exit 1
     fi
 
