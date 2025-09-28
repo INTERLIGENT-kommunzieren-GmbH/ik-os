@@ -33,6 +33,25 @@ else
     exit 1
 fi
 
+### Qualys Cloud Agent Installation and Configuration
+#
+# IMPORTANT: This section installs and configures the Qualys Cloud Agent for post-deployment activation.
+#
+# DEFERRED ACTIVATION APPROACH:
+# - Agent installation and file extraction happens during image build
+# - Agent activation is deferred to first boot when systemd is available
+# - Activation configuration is stored in /etc/qualys/cloud-agent/activation.conf
+# - First-boot activation script is created at /var/usrlocal/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+# - Systemd service is configured to run activation script before starting the agent
+# - Activation flag prevents re-activation on subsequent boots
+#
+# This approach ensures:
+# 1. Image build completes successfully (no systemd dependency during build)
+# 2. Agent activates automatically on first boot when systemd is running
+# 3. Follows immutable OS principles by integrating into base image
+# 4. Provides reliable activation without manual intervention
+#
+
 # Create necessary directories for Qualys Cloud Agent
 mkdir -p /var/usrlocal/qualys/cloud-agent/bin
 mkdir -p /var/usrlocal/qualys/cloud-agent/data
@@ -206,66 +225,115 @@ else
     echo "Warning: qualys-cloud-agent.service not found, skipping enable"
 fi
 
-# Activate Qualys Cloud Agent with the specified parameters
-if [ -x "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
-    echo "Activating Qualys Cloud Agent with organization parameters..."
+# NOTE: Qualys Cloud Agent activation is deferred to post-deployment
+# Activation cannot be performed during container build because systemd is not available.
+# The agent will be activated automatically when the systemd service starts after deployment.
+echo "Skipping Qualys Cloud Agent activation during build (systemd not available)"
+echo "Agent will be activated automatically on first boot when systemd service starts"
 
-    # Load activation configuration
-    if [ -f "/ctx/qualys-activation.conf" ]; then
-        source /ctx/qualys-activation.conf
-        echo "Loaded Qualys activation configuration"
-    else
-        echo "Warning: Qualys activation configuration not found, using default parameters"
-        # Fallback to hardcoded values
-        QUALYS_ACTIVATION_ID="3c428a41-5a96-4d64-b9a9-15cf22a31bf3"
-        QUALYS_CUSTOMER_ID="219196ce-3561-fecd-82f3-2c4a5bcbbe12"
-        QUALYS_SERVER_URI="https://qagpublic.qg2.apps.qualys.eu/CloudAgent/"
-    fi
-
-    # Build activation command with parameters
-    activation_cmd="/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
-    activation_cmd="$activation_cmd ActivationId=$QUALYS_ACTIVATION_ID"
-    activation_cmd="$activation_cmd CustomerId=$QUALYS_CUSTOMER_ID"
-    activation_cmd="$activation_cmd ServerUri=$QUALYS_SERVER_URI"
-
-    # Add optional parameters if they are set
-    if [ -n "${QUALYS_PROXY_URL:-}" ]; then
-        activation_cmd="$activation_cmd ProxyURL=$QUALYS_PROXY_URL"
-    fi
-    if [ -n "${QUALYS_PROXY_USERNAME:-}" ]; then
-        activation_cmd="$activation_cmd ProxyUsername=$QUALYS_PROXY_USERNAME"
-    fi
-    if [ -n "${QUALYS_PROXY_PASSWORD:-}" ]; then
-        activation_cmd="$activation_cmd ProxyPassword=$QUALYS_PROXY_PASSWORD"
-    fi
-    if [ -n "${QUALYS_LOG_LEVEL:-}" ]; then
-        activation_cmd="$activation_cmd LogLevel=$QUALYS_LOG_LEVEL"
-    fi
-
-    echo "Running activation command: $activation_cmd"
-
-    # Run the activation command
-    eval "$activation_cmd"
-
-    activation_result=$?
-    if [ $activation_result -eq 0 ]; then
-        echo "Qualys Cloud Agent activated successfully"
-
-        # Verify activation by checking agent status
-        if /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh status >/dev/null 2>&1; then
-            echo "Qualys Cloud Agent status verification passed"
-        else
-            echo "Warning: Qualys Cloud Agent activation completed but status check failed"
-        fi
-    else
-        echo "Warning: Qualys Cloud Agent activation failed with exit code $activation_result"
-        echo "The agent will need to be activated manually after deployment"
-    fi
+# Prepare activation configuration for post-deployment use
+if [ -f "/ctx/qualys-activation.conf" ]; then
+    echo "Installing Qualys activation configuration for post-deployment use..."
+    cp /ctx/qualys-activation.conf /etc/qualys/cloud-agent/activation.conf
+    chmod 600 /etc/qualys/cloud-agent/activation.conf
+    echo "Activation configuration installed to /etc/qualys/cloud-agent/activation.conf"
 else
-    echo "Warning: Qualys Cloud Agent script not found at /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+    echo "Creating default Qualys activation configuration..."
+    cat > /etc/qualys/cloud-agent/activation.conf << 'EOF'
+# Qualys Cloud Agent Activation Configuration
+# This file contains the activation parameters for post-deployment activation
+QUALYS_ACTIVATION_ID="3c428a41-5a96-4d64-b9a9-15cf22a31bf3"
+QUALYS_CUSTOMER_ID="219196ce-3561-fecd-82f3-2c4a5bcbbe12"
+QUALYS_SERVER_URI="https://qagpublic.qg2.apps.qualys.eu/CloudAgent/"
+EOF
+    chmod 600 /etc/qualys/cloud-agent/activation.conf
+    echo "Default activation configuration created"
 fi
 
-# Create systemd service override to ensure proper startup after activation
+# Create first-boot activation script for post-deployment use
+echo "Creating Qualys Cloud Agent first-boot activation script..."
+cat > /var/usrlocal/qualys/cloud-agent/bin/qualys-first-boot-activation.sh << 'EOF'
+#!/bin/bash
+# Qualys Cloud Agent First-Boot Activation Script
+# This script handles activation on first boot when systemd is available
+
+ACTIVATION_FLAG="/var/lib/qualys/cloud-agent/.activated"
+ACTIVATION_CONFIG="/etc/qualys/cloud-agent/activation.conf"
+AGENT_SCRIPT="/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+
+# Create state directory
+mkdir -p /var/lib/qualys/cloud-agent
+
+# Check if already activated
+if [ -f "$ACTIVATION_FLAG" ]; then
+    echo "Qualys Cloud Agent already activated, skipping activation"
+    exit 0
+fi
+
+# Check if agent script exists
+if [ ! -x "$AGENT_SCRIPT" ]; then
+    echo "ERROR: Qualys agent script not found at $AGENT_SCRIPT"
+    exit 1
+fi
+
+# Load activation configuration
+if [ -f "$ACTIVATION_CONFIG" ]; then
+    source "$ACTIVATION_CONFIG"
+    echo "Loaded activation configuration from $ACTIVATION_CONFIG"
+else
+    echo "ERROR: Activation configuration not found at $ACTIVATION_CONFIG"
+    exit 1
+fi
+
+# Build activation command
+activation_cmd="$AGENT_SCRIPT"
+activation_cmd="$activation_cmd ActivationId=$QUALYS_ACTIVATION_ID"
+activation_cmd="$activation_cmd CustomerId=$QUALYS_CUSTOMER_ID"
+activation_cmd="$activation_cmd ServerUri=$QUALYS_SERVER_URI"
+
+# Add optional parameters if they are set
+if [ -n "${QUALYS_PROXY_URL:-}" ]; then
+    activation_cmd="$activation_cmd ProxyURL=$QUALYS_PROXY_URL"
+fi
+if [ -n "${QUALYS_PROXY_USERNAME:-}" ]; then
+    activation_cmd="$activation_cmd ProxyUsername=$QUALYS_PROXY_USERNAME"
+fi
+if [ -n "${QUALYS_PROXY_PASSWORD:-}" ]; then
+    activation_cmd="$activation_cmd ProxyPassword=$QUALYS_PROXY_PASSWORD"
+fi
+if [ -n "${QUALYS_LOG_LEVEL:-}" ]; then
+    activation_cmd="$activation_cmd LogLevel=$QUALYS_LOG_LEVEL"
+fi
+
+echo "Attempting Qualys Cloud Agent activation..."
+echo "Activation command: $activation_cmd"
+
+# Run activation
+if eval "$activation_cmd"; then
+    echo "Qualys Cloud Agent activated successfully"
+    # Create activation flag to prevent re-activation
+    touch "$ACTIVATION_FLAG"
+    echo "Activation flag created at $ACTIVATION_FLAG"
+    exit 0
+else
+    echo "ERROR: Qualys Cloud Agent activation failed"
+    exit 1
+fi
+EOF
+
+chmod +x /var/usrlocal/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+echo "First-boot activation script created and made executable"
+
+# Verify Qualys agent installation without attempting activation
+if [ -x "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+    echo "✓ Qualys Cloud Agent installation verified successfully"
+    echo "✓ Agent script is executable and ready for post-deployment activation"
+    echo "✓ First-boot activation script created"
+else
+    echo "✗ Warning: Qualys Cloud Agent script not found at /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+fi
+
+# Create systemd service override to ensure proper startup with first-boot activation
 mkdir -p /etc/systemd/system/qualys-cloud-agent.service.d
 cat > /etc/systemd/system/qualys-cloud-agent.service.d/override.conf << 'EOF'
 [Unit]
@@ -276,7 +344,9 @@ Wants=network-online.target
 [Service]
 # Verify executable exists before attempting to start
 ExecStartPre=/bin/bash -c 'if [ ! -f /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh ]; then echo "ERROR: Qualys agent script not found"; exit 203; fi'
-# Add a delay to ensure system is fully ready
+# Perform first-boot activation if needed (this will be skipped if already activated)
+ExecStartPre=/bin/bash /var/usrlocal/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+# Add a delay to ensure system is fully ready after activation
 ExecStartPre=/bin/sleep 10
 # Use explicit bash interpreter to avoid exec issues
 ExecStart=
@@ -297,19 +367,44 @@ EOF
 
 echo "Created systemd service override for Qualys Cloud Agent"
 
-# Final validation that Qualys agent is properly installed
+# Final validation that Qualys agent is properly installed for post-deployment activation
 echo "Performing final Qualys Cloud Agent validation..."
+echo ""
+echo "=== QUALYS CLOUD AGENT INSTALLATION SUMMARY ==="
 if [ -f "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
-    echo "✓ Qualys agent script exists"
-    if /bin/bash /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh status >/dev/null 2>&1; then
-        echo "✓ Qualys agent script executes successfully"
-    else
-        echo "⚠ Qualys agent script exists but may need activation after deployment"
-    fi
+    echo "✓ Qualys agent script installed successfully"
 else
-    echo "✗ ERROR: Qualys agent script not found - this will cause exit code 203"
+    echo "✗ ERROR: Qualys agent script not found - this will cause service startup failure"
     exit 1
 fi
+
+if [ -f "/var/usrlocal/qualys/cloud-agent/bin/qualys-first-boot-activation.sh" ]; then
+    echo "✓ First-boot activation script created"
+else
+    echo "✗ ERROR: First-boot activation script not found"
+    exit 1
+fi
+
+if [ -f "/etc/qualys/cloud-agent/activation.conf" ]; then
+    echo "✓ Activation configuration installed"
+else
+    echo "✗ ERROR: Activation configuration not found"
+    exit 1
+fi
+
+echo "✓ Systemd service configured with first-boot activation"
+echo ""
+echo "IMPORTANT: Qualys Cloud Agent activation is deferred to post-deployment."
+echo "The agent will be automatically activated when the systemd service starts"
+echo "after the OS is deployed and systemd is running."
+echo ""
+echo "Activation process:"
+echo "1. On first boot, systemd will start qualys-cloud-agent.service"
+echo "2. The service will run qualys-first-boot-activation.sh as ExecStartPre"
+echo "3. The activation script will activate the agent using stored configuration"
+echo "4. Once activated, the agent will start normally"
+echo "5. Subsequent boots will skip activation (activation flag prevents re-activation)"
+echo "================================================"
 
 # Clean up compatibility workarounds
 echo "Cleaning up compatibility workarounds..."
