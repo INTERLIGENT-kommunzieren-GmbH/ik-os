@@ -236,6 +236,7 @@ echo "Created systemd service override for Qualys Cloud Agent"
 
 # Install Qualys verification script
 if [ -f "/ctx/qualys-verify.sh" ]; then
+    mkdir -p /usr/local/bin
     cp /ctx/qualys-verify.sh /usr/local/bin/qualys-verify
     chmod +x /usr/local/bin/qualys-verify
     echo "Installed Qualys verification script at /usr/local/bin/qualys-verify"
@@ -337,13 +338,6 @@ EOF
     echo "DNS server 192.168.77.10 configured"
     echo "DNS search domains: intern.interligent.com, rz01.interligent.com, projects.interligent.com"
     echo "Certificates extracted to /etc/openvpn/"
-
-    # Copy the test script to the system for post-boot testing
-    if [ -f "/ctx/test-vpn-config.sh" ]; then
-        cp /ctx/test-vpn-config.sh /usr/local/bin/test-vpn-config
-        chmod +x /usr/local/bin/test-vpn-config
-        echo "VPN test script installed to /usr/local/bin/test-vpn-config"
-    fi
 else
     echo "Warning: ik-office.ovpn file not found, skipping VPN configuration"
 fi
@@ -372,3 +366,42 @@ if [ -f "/ctx/flatpaks/additional-flatpaks.list" ]; then
 else
     echo "No additional flatpaks list found, skipping additional Flatpak installation"
 fi
+
+### Install Custom Interligent Company Logos
+echo "Installing custom Interligent company logos..."
+
+# Install custom GDM logo
+if [ -f "/ctx/logos/gdm/fedora-gdm-logo.png" ]; then
+    echo "Installing custom GDM logo..."
+    cp /ctx/logos/gdm/fedora-gdm-logo.png /usr/share/pixmaps/fedora-gdm-logo.png
+    chmod 644 /usr/share/pixmaps/fedora-gdm-logo.png
+    echo "Custom GDM logo installed successfully"
+else
+    echo "Warning: Custom GDM logo not found at /ctx/logos/gdm/fedora-gdm-logo.png"
+fi
+
+# Install custom Plymouth watermark
+if [ -f "/ctx/logos/plymouth/watermark.png" ]; then
+    echo "Installing custom Plymouth watermark..."
+    # Ensure Plymouth spinner theme directory exists
+    mkdir -p /usr/share/plymouth/themes/spinner/
+    cp /ctx/logos/plymouth/watermark.png /usr/share/plymouth/themes/spinner/watermark.png
+    chmod 644 /usr/share/plymouth/themes/spinner/watermark.png
+    echo "Custom Plymouth watermark installed successfully"
+else
+    echo "Warning: Custom Plymouth watermark not found at /ctx/logos/plymouth/watermark.png"
+fi
+
+# Configure GDM to use custom logo
+echo "Configuring GDM to use custom logo..."
+mkdir -p /etc/dconf/db/gdm.d
+cat > /etc/dconf/db/gdm.d/01-logo << 'EOF'
+[org/gnome/login-screen]
+logo='/usr/share/pixmaps/fedora-gdm-logo.png'
+EOF
+
+# Update dconf database
+dconf update
+echo "GDM logo configuration updated successfully"
+
+echo "Custom Interligent company logos installation completed"
