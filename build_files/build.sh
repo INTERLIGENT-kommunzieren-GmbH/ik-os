@@ -1,3 +1,4 @@
+
 #!/bin/bash
 
 set -e
@@ -11,16 +12,35 @@ set -e
 
 # this installs a package from fedora repos
 dnf5 install -y mc
-rpm-ostree install /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
+
+# Check if Epson RPM exists before installing
+if [ -f "/ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm" ]; then
+    rpm-ostree install /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
+else
+    echo "Error: Epson RPM file not found"
+    exit 1
+fi
+
+# Create necessary directories for Qualys Cloud Agent
 mkdir -p /var/usrlocal/qualys/cloud-agent/bin
 mkdir -p /var/usrlocal/qualys/cloud-agent/data
 mkdir -p /var/usrlocal/qualys/cloud-agent/data/manifests
 mkdir -p /etc/qualys/cloud-agent
 mkdir -p /etc/qualys/cloud-agent-defaults
 mkdir -p /var/log/qualys
-rpm-ostree install /ctx/QualysCloudAgent.rpm
 
-cat | tee /files/tmpfiles/epson.conf <<EOF
+# Check if Qualys RPM exists before installing
+if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
+    rpm-ostree install /ctx/QualysCloudAgent.rpm
+else
+    echo "Error: QualysCloudAgent RPM file not found"
+    exit 1
+fi
+
+# Ensure tmpfiles.d directory exists
+mkdir -p /usr/lib/tmpfiles.d/
+
+cat | tee /usr/lib/tmpfiles.d/epson.conf <<EOF
 # Tmpfiles for Epson Inkjet Driver
 L /var/opt/epson-inkjet-printer-escpr/lib64/libescpr.so     - - - - libescpr.so.1.0.0
 L /var/opt/epson-inkjet-printer-escpr/lib64/libescpr.so.1   - - - - libescpr.so.1.0.0
@@ -43,4 +63,11 @@ EOF
 #### Example for enabling a System Unit File
 
 #systemctl enable podman.socket
-systemctl enable qualys-cloud-agent.service
+
+# Enable Qualys Cloud Agent service if it exists
+if systemctl list-unit-files qualys-cloud-agent.service >/dev/null 2>&1; then
+    systemctl enable qualys-cloud-agent.service
+    echo "Successfully enabled qualys-cloud-agent.service"
+else
+    echo "Warning: qualys-cloud-agent.service not found, skipping enable"
+fi
