@@ -446,28 +446,43 @@ fi
 
 echo "NetworkManager VPN configuration completed"
 
-### Install Additional System Flatpaks
-echo "Installing additional system Flatpaks..."
+### Configure Additional System Flatpaks for Post-Deployment Installation
+echo "Configuring additional system Flatpaks for post-deployment installation..."
 
-# Install additional flatpaks without overwriting the base Bluefin flatpaks
+# Copy the flatpaks list to the system for later use with ujust install-system-flatpaks
 if [ -f "/ctx/flatpaks/additional-flatpaks.list" ]; then
-    echo "Found additional flatpaks to install..."
+    echo "Installing additional flatpaks list for post-deployment installation..."
 
-    # Read each line from the additional flatpaks list and install
+    # Create the directory for flatpak configuration in the standard Bluefin location
+    # Based on Universal Blue documentation, flatpak lists are typically in /usr/etc/flatpak/
+    mkdir -p /usr/etc/flatpak
+
+    # Copy the additional flatpaks list to the system in the expected location
+    cp /ctx/flatpaks/additional-flatpaks.list /usr/etc/flatpak/additional-flatpaks.list
+    chmod 644 /usr/etc/flatpak/additional-flatpaks.list
+
+    echo "Additional flatpaks list installed to /usr/etc/flatpak/additional-flatpaks.list"
+    echo "Users can install these flatpaks after deployment using: ujust install-system-flatpaks"
+
+    # Log which flatpaks are configured for installation
+    echo "Configured flatpaks for post-deployment installation:"
     while IFS= read -r flatpak_id || [ -n "$flatpak_id" ]; do
         # Skip empty lines and comments
         if [[ -n "$flatpak_id" && ! "$flatpak_id" =~ ^[[:space:]]*# ]]; then
-            echo "Installing additional flatpak: $flatpak_id"
-            # Remove 'app/' prefix if present for the flatpak install command
-            clean_id="${flatpak_id#app/}"
-            flatpak install --system --noninteractive flathub "$clean_id" || echo "Warning: Failed to install $clean_id"
+            echo "  - $flatpak_id"
         fi
     done < "/ctx/flatpaks/additional-flatpaks.list"
 
-    echo "Additional Flatpaks installation completed"
+    # Also create a backup copy in /etc/flatpak for compatibility
+    mkdir -p /etc/flatpak
+    cp /ctx/flatpaks/additional-flatpaks.list /etc/flatpak/additional-flatpaks.list
+    chmod 644 /etc/flatpak/additional-flatpaks.list
+    echo "Backup copy also placed in /etc/flatpak/additional-flatpaks.list"
 else
-    echo "No additional flatpaks list found, skipping additional Flatpak installation"
+    echo "No additional flatpaks list found, skipping flatpak configuration"
 fi
+
+echo "Flatpak configuration completed"
 
 ### Install Custom Interligent Company Logos
 echo "Installing custom Interligent company logos..."

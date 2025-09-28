@@ -130,6 +130,38 @@ The [Containerfile](./Containerfile) defines the operations used to customize th
 
 The [build.sh](./build_files/build.sh) file is called from your Containerfile. It is the best place to install new packages or make any other customization to your system. There are customization examples contained within it for your perusal.
 
+## Flatpak Installation
+
+This image template follows immutable OS principles by configuring flatpaks for post-deployment installation rather than installing them during the image build process. This approach keeps the base image clean and allows for better flexibility.
+
+### Adding Flatpaks
+
+To add flatpaks to your custom image:
+
+1. Edit the `flatpaks/additional-flatpaks.list` file
+2. Add one flatpak ID per line (e.g., `app/com.jgraph.drawio.desktop`)
+3. The flatpak list will be included in your image for later installation
+
+### Installing Flatpaks After Deployment
+
+After deploying your custom image, install the configured flatpaks using:
+
+```bash
+ujust install-system-flatpaks
+```
+
+This command will:
+- Install all flatpaks from the Universal Blue default list
+- Install all additional flatpaks from your custom `additional-flatpaks.list`
+
+### Flatpak Configuration Location
+
+The flatpak lists are installed to:
+- Primary location: `/usr/etc/flatpak/additional-flatpaks.list`
+- Backup location: `/etc/flatpak/additional-flatpaks.list`
+
+This ensures compatibility with Bluefin's `ujust install-system-flatpaks` command.
+
 ## build.yml
 
 The [build.yml](./.github/workflows/build.yml) Github Actions workflow creates your custom OCI image and publishes it to the Github Container Registry (GHCR). By default, the image name will match the Github repository name. There are several environment variables at the start of the workflow which may be of interest to change.
