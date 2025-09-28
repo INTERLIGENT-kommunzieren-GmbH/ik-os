@@ -156,6 +156,93 @@ else
     echo "Warning: qualys-cloud-agent.service not found, skipping enable"
 fi
 
+# Activate Qualys Cloud Agent with the specified parameters
+if [ -x "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+    echo "Activating Qualys Cloud Agent with organization parameters..."
+
+    # Load activation configuration
+    if [ -f "/ctx/qualys-activation.conf" ]; then
+        source /ctx/qualys-activation.conf
+        echo "Loaded Qualys activation configuration"
+    else
+        echo "Warning: Qualys activation configuration not found, using default parameters"
+        # Fallback to hardcoded values
+        QUALYS_ACTIVATION_ID="3c428a41-5a96-4d64-b9a9-15cf22a31bf3"
+        QUALYS_CUSTOMER_ID="219196ce-3561-fecd-82f3-2c4a5bcbbe12"
+        QUALYS_SERVER_URI="https://qagpublic.qg2.apps.qualys.eu/CloudAgent/"
+    fi
+
+    # Build activation command with parameters
+    activation_cmd="/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+    activation_cmd="$activation_cmd ActivationId=$QUALYS_ACTIVATION_ID"
+    activation_cmd="$activation_cmd CustomerId=$QUALYS_CUSTOMER_ID"
+    activation_cmd="$activation_cmd ServerUri=$QUALYS_SERVER_URI"
+
+    # Add optional parameters if they are set
+    if [ -n "${QUALYS_PROXY_URL:-}" ]; then
+        activation_cmd="$activation_cmd ProxyURL=$QUALYS_PROXY_URL"
+    fi
+    if [ -n "${QUALYS_PROXY_USERNAME:-}" ]; then
+        activation_cmd="$activation_cmd ProxyUsername=$QUALYS_PROXY_USERNAME"
+    fi
+    if [ -n "${QUALYS_PROXY_PASSWORD:-}" ]; then
+        activation_cmd="$activation_cmd ProxyPassword=$QUALYS_PROXY_PASSWORD"
+    fi
+    if [ -n "${QUALYS_LOG_LEVEL:-}" ]; then
+        activation_cmd="$activation_cmd LogLevel=$QUALYS_LOG_LEVEL"
+    fi
+
+    echo "Running activation command: $activation_cmd"
+
+    # Run the activation command
+    eval "$activation_cmd"
+
+    activation_result=$?
+    if [ $activation_result -eq 0 ]; then
+        echo "Qualys Cloud Agent activated successfully"
+
+        # Verify activation by checking agent status
+        if /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh status >/dev/null 2>&1; then
+            echo "Qualys Cloud Agent status verification passed"
+        else
+            echo "Warning: Qualys Cloud Agent activation completed but status check failed"
+        fi
+    else
+        echo "Warning: Qualys Cloud Agent activation failed with exit code $activation_result"
+        echo "The agent will need to be activated manually after deployment"
+    fi
+else
+    echo "Warning: Qualys Cloud Agent script not found at /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+fi
+
+# Create systemd service override to ensure proper startup after activation
+mkdir -p /etc/systemd/system/qualys-cloud-agent.service.d
+cat > /etc/systemd/system/qualys-cloud-agent.service.d/override.conf << 'EOF'
+[Unit]
+# Ensure network is fully available before starting
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Add a delay to ensure system is fully ready
+ExecStartPre=/bin/sleep 10
+# Restart on failure with exponential backoff
+RestartSec=30
+StartLimitBurst=5
+StartLimitIntervalSec=300
+EOF
+
+echo "Created systemd service override for Qualys Cloud Agent"
+
+# Install Qualys verification script
+if [ -f "/ctx/qualys-verify.sh" ]; then
+    cp /ctx/qualys-verify.sh /usr/local/bin/qualys-verify
+    chmod +x /usr/local/bin/qualys-verify
+    echo "Installed Qualys verification script at /usr/local/bin/qualys-verify"
+else
+    echo "Warning: Qualys verification script not found"
+fi
+
 # Clean up compatibility workarounds
 echo "Cleaning up compatibility workarounds..."
 rm -f /sbin/chkconfig
