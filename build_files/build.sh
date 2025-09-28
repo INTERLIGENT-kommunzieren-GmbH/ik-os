@@ -13,6 +13,9 @@ set -e
 # this installs a package from fedora repos
 dnf5 install -y mc
 
+# Install cpio for RPM extraction fallback method
+dnf5 install -y cpio
+
 # Check if Epson RPM exists before installing
 if [ -f "/ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm" ]; then
     rpm-ostree install /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
@@ -25,13 +28,62 @@ fi
 mkdir -p /var/usrlocal/qualys/cloud-agent/bin
 mkdir -p /var/usrlocal/qualys/cloud-agent/data
 mkdir -p /var/usrlocal/qualys/cloud-agent/data/manifests
+mkdir -p /var/usrlocal/qualys/cloud-agent/lib
 mkdir -p /etc/qualys/cloud-agent
 mkdir -p /etc/qualys/cloud-agent-defaults
 mkdir -p /var/log/qualys
 
+# Create compatibility directories and files for SysV init compatibility
+mkdir -p /etc/init.d
+mkdir -p /sbin
+
+# Create a dummy chkconfig script to satisfy RPM post-install requirements
+cat > /sbin/chkconfig << 'EOF'
+#!/bin/bash
+# Dummy chkconfig for rpm-ostree compatibility
+# This script prevents RPM post-install failures in systemd environments
+echo "chkconfig: Ignoring SysV init command in systemd environment"
+exit 0
+EOF
+chmod +x /sbin/chkconfig
+
 # Check if Qualys RPM exists before installing
 if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
-    rpm-ostree install /ctx/QualysCloudAgent.rpm
+    echo "Installing Qualys Cloud Agent RPM with compatibility workarounds..."
+
+    # Try installing with --noscripts first (preferred method)
+    if rpm-ostree install --noscripts /ctx/QualysCloudAgent.rpm; then
+        echo "Qualys Cloud Agent RPM installed successfully (scripts bypassed)"
+    else
+        echo "rpm-ostree installation failed, trying manual extraction method..."
+
+        # Fallback: Manual extraction and installation
+        TEMP_DIR=$(mktemp -d)
+        cd "$TEMP_DIR"
+
+        # Extract the RPM contents
+        rpm2cpio /ctx/QualysCloudAgent.rpm | cpio -idmv
+
+        # Copy files to their destinations
+        if [ -d "var/usrlocal" ]; then
+            cp -r var/usrlocal/* /var/usrlocal/ 2>/dev/null || true
+        fi
+        if [ -d "etc" ]; then
+            cp -r etc/* /etc/ 2>/dev/null || true
+        fi
+        if [ -d "usr" ]; then
+            cp -r usr/* /usr/ 2>/dev/null || true
+        fi
+
+        # Set proper permissions
+        chmod +x /var/usrlocal/qualys/cloud-agent/bin/* 2>/dev/null || true
+
+        # Cleanup
+        cd /
+        rm -rf "$TEMP_DIR"
+
+        echo "Manual installation completed"
+    fi
 else
     echo "Error: QualysCloudAgent RPM file not found"
     exit 1
@@ -64,6 +116,32 @@ EOF
 
 #systemctl enable podman.socket
 
+# Create systemd service for Qualys Cloud Agent if it doesn't exist
+if [ ! -f "/usr/lib/systemd/system/qualys-cloud-agent.service" ] && [ ! -f "/etc/systemd/system/qualys-cloud-agent.service" ]; then
+    echo "Creating systemd service file for Qualys Cloud Agent..."
+
+    # Create the systemd service file
+    cat > /usr/lib/systemd/system/qualys-cloud-agent.service << 'EOF'
+[Unit]
+Description=Qualys Cloud Agent
+After=network.target
+
+[Service]
+Type=forking
+ExecStart=/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
+ExecStop=/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
+ExecReload=/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh restart
+PIDFile=/var/run/qualys-cloud-agent.pid
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    echo "Systemd service file created"
+fi
+
 # Enable Qualys Cloud Agent service if it exists
 if systemctl list-unit-files qualys-cloud-agent.service >/dev/null 2>&1; then
     systemctl enable qualys-cloud-agent.service
@@ -71,3 +149,8 @@ if systemctl list-unit-files qualys-cloud-agent.service >/dev/null 2>&1; then
 else
     echo "Warning: qualys-cloud-agent.service not found, skipping enable"
 fi
+
+# Clean up compatibility workarounds
+echo "Cleaning up compatibility workarounds..."
+rm -f /sbin/chkconfig
+echo "Cleanup completed"
