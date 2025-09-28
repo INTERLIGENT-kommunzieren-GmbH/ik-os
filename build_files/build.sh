@@ -16,6 +16,12 @@ dnf5 install -y mc
 # Install cpio for RPM extraction fallback method
 dnf5 install -y cpio
 
+# Install NetworkManager OpenVPN support for VPN connections
+dnf5 install -y NetworkManager-openvpn NetworkManager-openvpn-gnome
+
+# Install uuidgen for generating connection UUIDs
+dnf5 install -y util-linux
+
 # Check if Epson RPM exists before installing
 if [ -f "/ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm" ]; then
     rpm-ostree install /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
@@ -154,6 +160,108 @@ fi
 echo "Cleaning up compatibility workarounds..."
 rm -f /sbin/chkconfig
 echo "Cleanup completed"
+
+### Configure NetworkManager VPN Connection
+echo "Configuring NetworkManager VPN connection..."
+
+# Ensure NetworkManager system-connections directory exists
+mkdir -p /etc/NetworkManager/system-connections
+
+# Create the OpenVPN connection file manually
+if [ -f "/ctx/ik-office.ovpn" ]; then
+    echo "Found ik-office.ovpn, creating NetworkManager connection file..."
+
+    # Generate a UUID for the connection
+    VPN_UUID=$(uuidgen)
+    VPN_CONNECTION_NAME="ik-office"
+    CONNECTION_FILE="/etc/NetworkManager/system-connections/${VPN_CONNECTION_NAME}.nmconnection"
+
+    # Create the NetworkManager connection file
+    cat > "$CONNECTION_FILE" << EOF
+[connection]
+id=${VPN_CONNECTION_NAME}
+uuid=${VPN_UUID}
+type=vpn
+autoconnect=false
+permissions=
+
+[vpn]
+service-type=org.freedesktop.NetworkManager.openvpn
+connection-type=password
+password-flags=1
+username-flags=1
+remote=80.147.28.39
+port=11194
+proto-tcp=no
+dev=tun
+dev-type=tun
+cipher=AES-128-GCM
+auth=SHA256
+tls-remote=server_FbS0XcIWNOvPp2bW
+verify-x509-name=server_FbS0XcIWNOvPp2bW name
+ca=/etc/openvpn/ik-office-ca.crt
+cert=/etc/openvpn/ik-office-cert.crt
+key=/etc/openvpn/ik-office-key.key
+tls-crypt=/etc/openvpn/ik-office-tls-crypt.key
+reneg-seconds=0
+auth-nocache=yes
+comp-lzo=no
+
+[ipv4]
+method=auto
+dns=192.168.77.10;
+dns-search=intern.interligent.com;rz01.interligent.com;projects.interligent.com;
+dns-priority=-50
+never-default=false
+
+[ipv6]
+method=auto
+
+[proxy]
+EOF
+
+    # Set proper permissions for the connection file
+    chmod 600 "$CONNECTION_FILE"
+
+    # Create OpenVPN certificate directory
+    mkdir -p /etc/openvpn
+
+    # Extract certificates and keys from the .ovpn file
+    echo "Extracting certificates and keys..."
+
+    # Extract CA certificate
+    sed -n '/<ca>/,/<\/ca>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-ca.crt
+
+    # Extract client certificate
+    sed -n '/<cert>/,/<\/cert>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-cert.crt
+
+    # Extract private key
+    sed -n '/<key>/,/<\/key>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-key.key
+
+    # Extract TLS crypt key
+    sed -n '/<tls-crypt>/,/<\/tls-crypt>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-tls-crypt.key
+
+    # Set proper permissions for certificate files
+    chmod 600 /etc/openvpn/ik-office-*.key
+    chmod 644 /etc/openvpn/ik-office-*.crt
+
+    echo "VPN connection '${VPN_CONNECTION_NAME}' configured successfully"
+    echo "Connection UUID: ${VPN_UUID}"
+    echo "DNS server 192.168.77.10 configured"
+    echo "DNS search domains: intern.interligent.com, rz01.interligent.com, projects.interligent.com"
+    echo "Certificates extracted to /etc/openvpn/"
+
+    # Copy the test script to the system for post-boot testing
+    if [ -f "/ctx/test-vpn-config.sh" ]; then
+        cp /ctx/test-vpn-config.sh /usr/local/bin/test-vpn-config
+        chmod +x /usr/local/bin/test-vpn-config
+        echo "VPN test script installed to /usr/local/bin/test-vpn-config"
+    fi
+else
+    echo "Warning: ik-office.ovpn file not found, skipping VPN configuration"
+fi
+
+echo "NetworkManager VPN configuration completed"
 
 ### Install Additional System Flatpaks
 echo "Installing additional system Flatpaks..."
