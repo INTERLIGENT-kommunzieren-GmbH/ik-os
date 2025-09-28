@@ -301,6 +301,11 @@ if [ -f "/ctx/ik-office.ovpn" ]; then
     CONNECTION_FILE="/etc/NetworkManager/system-connections/${VPN_CONNECTION_NAME}.nmconnection"
 
     # Create the NetworkManager connection file
+    # This configuration implements the auth-user-pass directive from the .ovpn file
+    # by setting password-flags=4 and username-flags=4, which means:
+    # - NetworkManager will always prompt for username and password
+    # - No credentials are stored in the connection file (security best practice)
+    # - Users can optionally save credentials in their keyring after first successful connection
     cat > "$CONNECTION_FILE" << EOF
 [connection]
 id=${VPN_CONNECTION_NAME}
@@ -312,8 +317,8 @@ permissions=
 [vpn]
 service-type=org.freedesktop.NetworkManager.openvpn
 connection-type=password
-password-flags=1
-username-flags=1
+password-flags=4
+username-flags=4
 remote=80.147.28.39
 port=11194
 proto-tcp=no
@@ -321,14 +326,21 @@ dev=tun
 dev-type=tun
 cipher=AES-128-GCM
 auth=SHA256
-tls-remote=server_FbS0XcIWNOvPp2bW
 verify-x509-name=server_FbS0XcIWNOvPp2bW name
-ca=/etc/openvpn/ik-office-ca.crt
-cert=/etc/openvpn/ik-office-cert.crt
-key=/etc/openvpn/ik-office-key.key
-tls-crypt=/etc/openvpn/ik-office-tls-crypt.key
+ca=/etc/openvpn/ik-office-ca.pem
+cert=/etc/openvpn/ik-office-cert.pem
+key=/etc/openvpn/ik-office-key.pem
+tls-crypt=/etc/openvpn/ik-office-tls-crypt.pem
+tls-cipher=TLS-ECDHE-ECDSA-WITH-AES-128-GCM-SHA256
+tls-version-min=1.2
 reneg-seconds=0
 auth-nocache=yes
+nobind=yes
+persist-key=yes
+persist-tun=yes
+script-security=2
+user=nm-openvpn
+group=nm-openvpn
 comp-lzo=no
 
 [ipv4]
@@ -354,26 +366,39 @@ EOF
     echo "Extracting certificates and keys..."
 
     # Extract CA certificate
-    sed -n '/<ca>/,/<\/ca>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-ca.crt
+    sed -n '/<ca>/,/<\/ca>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-ca.pem
 
     # Extract client certificate
-    sed -n '/<cert>/,/<\/cert>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-cert.crt
+    sed -n '/<cert>/,/<\/cert>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-cert.pem
 
     # Extract private key
-    sed -n '/<key>/,/<\/key>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-key.key
+    sed -n '/<key>/,/<\/key>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-key.pem
 
     # Extract TLS crypt key
-    sed -n '/<tls-crypt>/,/<\/tls-crypt>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-tls-crypt.key
+    sed -n '/<tls-crypt>/,/<\/tls-crypt>/p' /ctx/ik-office.ovpn | sed '1d;$d' > /etc/openvpn/ik-office-tls-crypt.pem
 
     # Set proper permissions for certificate files
-    chmod 600 /etc/openvpn/ik-office-*.key
-    chmod 644 /etc/openvpn/ik-office-*.crt
+    chmod 600 /etc/openvpn/ik-office-*.pem
+    chmod 644 /etc/openvpn/ik-office-ca.pem
+
+    # Ensure nm-openvpn user and group exist (they should be created by NetworkManager-openvpn package)
+    # If not, create them for proper OpenVPN operation
+    if ! getent group nm-openvpn >/dev/null 2>&1; then
+        groupadd -r nm-openvpn
+        echo "Created nm-openvpn group"
+    fi
+    if ! getent passwd nm-openvpn >/dev/null 2>&1; then
+        useradd -r -g nm-openvpn -d /var/lib/openvpn -s /sbin/nologin nm-openvpn
+        echo "Created nm-openvpn user"
+    fi
 
     echo "VPN connection '${VPN_CONNECTION_NAME}' configured successfully"
     echo "Connection UUID: ${VPN_UUID}"
+    echo "Authentication: Will prompt for username/password on connection (no credentials stored)"
     echo "DNS server 192.168.77.10 configured"
     echo "DNS search domains: intern.interligent.com, rz01.interligent.com, projects.interligent.com"
-    echo "Certificates extracted to /etc/openvpn/"
+    echo "Certificates extracted to /etc/openvpn/ with .pem extensions"
+    echo "Note: Users can optionally save credentials in keyring after successful authentication"
 else
     echo "Warning: ik-office.ovpn file not found, skipping VPN configuration"
 fi
