@@ -1,7 +1,7 @@
 
 #!/bin/bash
 
-set -e
+set -ouex pipefail
 
 ### Install packages
 
@@ -154,3 +154,26 @@ fi
 echo "Cleaning up compatibility workarounds..."
 rm -f /sbin/chkconfig
 echo "Cleanup completed"
+
+### Install Additional System Flatpaks
+echo "Installing additional system Flatpaks..."
+
+# Install additional flatpaks without overwriting the base Bluefin flatpaks
+if [ -f "/ctx/flatpaks/additional-flatpaks.list" ]; then
+    echo "Found additional flatpaks to install..."
+
+    # Read each line from the additional flatpaks list and install
+    while IFS= read -r flatpak_id || [ -n "$flatpak_id" ]; do
+        # Skip empty lines and comments
+        if [[ -n "$flatpak_id" && ! "$flatpak_id" =~ ^[[:space:]]*# ]]; then
+            echo "Installing additional flatpak: $flatpak_id"
+            # Remove 'app/' prefix if present for the flatpak install command
+            clean_id="${flatpak_id#app/}"
+            flatpak install --system --noninteractive flathub "$clean_id" || echo "Warning: Failed to install $clean_id"
+        fi
+    done < "/ctx/flatpaks/additional-flatpaks.list"
+
+    echo "Additional Flatpaks installation completed"
+else
+    echo "No additional flatpaks list found, skipping additional Flatpak installation"
+fi
