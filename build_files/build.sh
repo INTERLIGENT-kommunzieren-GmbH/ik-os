@@ -25,6 +25,12 @@ dnf5 install -y util-linux
 # Install Plymouth tools for boot splash customization
 dnf5 install -y plymouth plymouth-scripts dracut
 
+# Install dracut configuration for container builds
+echo "Installing dracut configuration for container build compatibility..."
+mkdir -p /etc/dracut.conf.d
+cp /ctx/dracut.conf /etc/dracut.conf.d/99-container-build.conf
+chmod 644 /etc/dracut.conf.d/99-container-build.conf
+
 # Check if Epson RPM exists before installing
 if [ -f "/ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm" ]; then
     rpm-ostree install /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
@@ -609,121 +615,24 @@ echo "Flatpak configuration completed"
 echo "Installing custom Interligent company logos..."
 
 # Install custom GDM logo
-if [ -f "/ctx/logos/gdm/fedora-gdm-logo.png" ]; then
-    echo "Installing custom GDM logo..."
-    cp /ctx/logos/gdm/fedora-gdm-logo.png /usr/share/pixmaps/fedora-gdm-logo.png
-    chmod 644 /usr/share/pixmaps/fedora-gdm-logo.png
-    echo "Custom GDM logo installed successfully"
-else
-    echo "Warning: Custom GDM logo not found at /ctx/logos/gdm/fedora-gdm-logo.png"
-fi
+echo "Installing custom GDM logo..."
+cp /ctx/logos/gdm/fedora-gdm-logo.png /usr/share/pixmaps/fedora-gdm-logo.png
+chmod 644 /usr/share/pixmaps/fedora-gdm-logo.png
+echo "Custom GDM logo installed successfully"
 
 # Install custom Plymouth watermark
-if [ -f "/ctx/logos/plymouth/watermark.png" ]; then
-    echo "Installing custom Plymouth watermark..."
+echo "Installing custom Plymouth watermark..."
 
-    # Ensure Plymouth spinner theme directory exists
-    mkdir -p /usr/share/plymouth/themes/spinner/
+# Ensure Plymouth spinner theme directory exists
+mkdir -p /usr/share/plymouth/themes/spinner/
 
-    # Install the custom watermark (Bluefin uses both watermark.png and silverblue-watermark.png)
-    cp /ctx/logos/plymouth/watermark.png /usr/share/plymouth/themes/spinner/watermark.png
-    cp /ctx/logos/plymouth/watermark.png /usr/share/plymouth/themes/spinner/silverblue-watermark.png
-    chmod 644 /usr/share/plymouth/themes/spinner/watermark.png
-    chmod 644 /usr/share/plymouth/themes/spinner/silverblue-watermark.png
+# Install the custom watermark files
+cp /ctx/logos/plymouth/watermark.png /usr/share/plymouth/themes/spinner/watermark.png
+cp /ctx/logos/plymouth/watermark.png /usr/share/plymouth/themes/spinner/silverblue-watermark.png
+chmod 644 /usr/share/plymouth/themes/spinner/watermark.png
+chmod 644 /usr/share/plymouth/themes/spinner/silverblue-watermark.png
 
-    # Verify the spinner theme configuration exists and is correct
-    SPINNER_THEME_FILE="/usr/share/plymouth/themes/spinner/spinner.plymouth"
-    if [ -f "$SPINNER_THEME_FILE" ]; then
-        echo "Verifying Plymouth spinner theme configuration..."
-
-        # Check if watermark is referenced in the theme file
-        if grep -q "Watermark=" "$SPINNER_THEME_FILE"; then
-            echo "Watermark reference found in theme configuration"
-            # Update existing watermark reference to use our custom one
-            sed -i 's|Watermark=.*|Watermark=/usr/share/plymouth/themes/spinner/watermark.png|' "$SPINNER_THEME_FILE"
-        else
-            echo "Adding watermark reference to spinner theme configuration..."
-            # Add watermark configuration to the theme file
-            sed -i '/\[spinner\]/a Watermark=/usr/share/plymouth/themes/spinner/watermark.png' "$SPINNER_THEME_FILE"
-        fi
-
-        # Also check for silverblue-watermark references and update them
-        if grep -q "silverblue-watermark" "$SPINNER_THEME_FILE"; then
-            echo "Updating silverblue-watermark references..."
-            sed -i 's|silverblue-watermark\.png|watermark.png|g' "$SPINNER_THEME_FILE"
-        fi
-    else
-        echo "Warning: Plymouth spinner theme configuration not found at $SPINNER_THEME_FILE"
-        echo "Creating basic spinner theme configuration..."
-        cat > "$SPINNER_THEME_FILE" << 'EOF'
-[Plymouth Theme]
-Name=Spinner
-Description=A theme that features a simple spinner
-ModuleName=two-step
-
-[two-step]
-Font=Cantarell 12
-TitleFont=Cantarell Light 16
-ImageDir=/usr/share/plymouth/themes/spinner
-DialogHorizontalAlignment=.013
-DialogVerticalAlignment=.052
-TitleHorizontalAlignment=.013
-TitleVerticalAlignment=.052
-HorizontalAlignment=.5
-VerticalAlignment=.7
-WatermarkHorizontalAlignment=.96
-WatermarkVerticalAlignment=.96
-Transition=none
-TransitionDuration=0.0
-BackgroundStartColor=0x2e3436
-BackgroundEndColor=0x2e3436
-ProgressBarBackgroundColor=0x606060
-ProgressBarForegroundColor=0xffffff
-MessageBelowAnimation=true
-
-[spinner]
-Watermark=/usr/share/plymouth/themes/spinner/watermark.png
-EOF
-    fi
-
-    # Set the spinner theme as default (this ensures our watermark is used)
-    echo "Setting spinner theme as default Plymouth theme..."
-    plymouth-set-default-theme spinner
-
-    # Update initramfs to include the new watermark
-    echo "Updating initramfs to include custom watermark..."
-    dracut --force --regenerate-all
-
-    # Verify the installation
-    echo "Verifying Plymouth watermark installation..."
-    if [ -f "/usr/share/plymouth/themes/spinner/watermark.png" ] && [ -f "/usr/share/plymouth/themes/spinner/silverblue-watermark.png" ]; then
-        echo "✓ Both watermark files installed successfully"
-
-        # Check file sizes to ensure they're not empty
-        watermark_size=$(stat -c%s "/usr/share/plymouth/themes/spinner/watermark.png" 2>/dev/null || echo "0")
-        silverblue_size=$(stat -c%s "/usr/share/plymouth/themes/spinner/silverblue-watermark.png" 2>/dev/null || echo "0")
-
-        if [ "$watermark_size" -gt 0 ] && [ "$silverblue_size" -gt 0 ]; then
-            echo "✓ Watermark files are valid (watermark.png: ${watermark_size} bytes, silverblue-watermark.png: ${silverblue_size} bytes)"
-        else
-            echo "⚠ Warning: Watermark files may be empty or corrupted"
-        fi
-
-        # Verify theme is set correctly
-        current_theme=$(plymouth-set-default-theme --list | grep "^spinner$" || echo "")
-        if [ -n "$current_theme" ]; then
-            echo "✓ Spinner theme is available"
-        else
-            echo "⚠ Warning: Spinner theme may not be properly configured"
-        fi
-    else
-        echo "✗ Error: Watermark files not found after installation"
-    fi
-
-    echo "Custom Plymouth watermark installation completed"
-else
-    echo "Warning: Custom Plymouth watermark not found at /ctx/logos/plymouth/watermark.png"
-fi
+echo "Custom Plymouth watermark installation completed"
 
 # Configure GDM to use custom logo
 echo "Configuring GDM to use custom logo..."
