@@ -90,6 +90,19 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
 
         echo "Manual installation completed"
     fi
+
+    # Verify the Qualys agent script exists and is executable
+    if [ ! -f "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+        echo "Error: Qualys agent script not found after installation"
+        exit 1
+    fi
+
+    if [ ! -x "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+        echo "Warning: Qualys agent script is not executable, fixing permissions..."
+        chmod +x /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh
+    fi
+
+    echo "Qualys Cloud Agent installation verified successfully"
 else
     echo "Error: QualysCloudAgent RPM file not found"
     exit 1
@@ -126,26 +139,34 @@ EOF
 if [ ! -f "/usr/lib/systemd/system/qualys-cloud-agent.service" ] && [ ! -f "/etc/systemd/system/qualys-cloud-agent.service" ]; then
     echo "Creating systemd service file for Qualys Cloud Agent..."
 
-    # Create the systemd service file
+    # Create the systemd service file with improved configuration
     cat > /usr/lib/systemd/system/qualys-cloud-agent.service << 'EOF'
 [Unit]
 Description=Qualys Cloud Agent
-After=network.target
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh
 
 [Service]
 Type=forking
-ExecStart=/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
-ExecStop=/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
-ExecReload=/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh restart
+ExecStartPre=/bin/bash -c 'test -x /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh || exit 203'
+ExecStartPre=/bin/sleep 5
+ExecStart=/bin/bash /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
+ExecStop=/bin/bash /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
+ExecReload=/bin/bash /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh restart
 PIDFile=/var/run/qualys-cloud-agent.pid
-Restart=always
-RestartSec=10
+Restart=on-failure
+RestartSec=30
+StartLimitBurst=3
+StartLimitIntervalSec=300
+TimeoutStartSec=60
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-    echo "Systemd service file created"
+    echo "Systemd service file created with improved configuration"
 fi
 
 # Enable Qualys Cloud Agent service if it exists
@@ -224,24 +245,41 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
+# Verify executable exists before attempting to start
+ExecStartPre=/bin/bash -c 'if [ ! -f /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh ]; then echo "ERROR: Qualys agent script not found"; exit 203; fi'
 # Add a delay to ensure system is fully ready
 ExecStartPre=/bin/sleep 10
+# Use explicit bash interpreter to avoid exec issues
+ExecStart=
+ExecStart=/bin/bash /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
+ExecStop=
+ExecStop=/bin/bash /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
+ExecReload=
+ExecReload=/bin/bash /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh restart
 # Restart on failure with exponential backoff
 RestartSec=30
 StartLimitBurst=5
 StartLimitIntervalSec=300
+# Set working directory to agent directory
+WorkingDirectory=/var/usrlocal/qualys/cloud-agent
+# Ensure proper environment
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EOF
 
 echo "Created systemd service override for Qualys Cloud Agent"
 
-# Install Qualys verification script
-if [ -f "/ctx/qualys-verify.sh" ]; then
-    mkdir -p /usr/local/bin
-    cp /ctx/qualys-verify.sh /usr/local/bin/qualys-verify
-    chmod +x /usr/local/bin/qualys-verify
-    echo "Installed Qualys verification script at /usr/local/bin/qualys-verify"
+# Final validation that Qualys agent is properly installed
+echo "Performing final Qualys Cloud Agent validation..."
+if [ -f "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+    echo "✓ Qualys agent script exists"
+    if /bin/bash /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh status >/dev/null 2>&1; then
+        echo "✓ Qualys agent script executes successfully"
+    else
+        echo "⚠ Qualys agent script exists but may need activation after deployment"
+    fi
 else
-    echo "Warning: Qualys verification script not found"
+    echo "✗ ERROR: Qualys agent script not found - this will cause exit code 203"
+    exit 1
 fi
 
 # Clean up compatibility workarounds
