@@ -16,20 +16,8 @@ dnf5 install -y mc
 # Install cpio for RPM extraction fallback method
 dnf5 install -y cpio
 
-# Install NetworkManager OpenVPN support for VPN connections
-dnf5 install -y NetworkManager-openvpn NetworkManager-openvpn-gnome
-
 # Install uuidgen for generating connection UUIDs
 dnf5 install -y util-linux
-
-# Install Plymouth tools for boot splash customization
-dnf5 install -y plymouth plymouth-scripts dracut
-
-# Install dracut configuration for container builds
-echo "Installing dracut configuration for container build compatibility..."
-mkdir -p /etc/dracut.conf.d
-cp /ctx/dracut.conf /etc/dracut.conf.d/99-container-build.conf
-chmod 644 /etc/dracut.conf.d/99-container-build.conf
 
 # Check if Epson RPM exists before installing
 if [ -f "/ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm" ]; then
