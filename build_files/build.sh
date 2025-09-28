@@ -155,15 +155,56 @@ mkdir -p /usr/lib/tmpfiles.d/
 
 cat | tee /usr/lib/tmpfiles.d/epson.conf <<EOF
 # Tmpfiles for Epson Inkjet Driver
+# Directory creation
+d /var/opt/epson-inkjet-printer-escpr 0755 root root -
+d /var/opt/epson-inkjet-printer-escpr/lib64 0755 root root -
+
+# Library symlinks
 L /var/opt/epson-inkjet-printer-escpr/lib64/libescpr.so     - - - - libescpr.so.1.0.0
 L /var/opt/epson-inkjet-printer-escpr/lib64/libescpr.so.1   - - - - libescpr.so.1.0.0
 EOF
 
 cat | tee /usr/lib/tmpfiles.d/qualys.conf <<EOF
 # Tmpfiles for Qualys Cloud Agent
+# Directory creation
+d /var/usrlocal/qualys/cloud-agent 0755 root root -
+d /var/usrlocal/qualys/cloud-agent/bin 0755 root root -
+d /var/usrlocal/qualys/cloud-agent/data 0755 root root -
+d /var/usrlocal/qualys/cloud-agent/data/manifests 0755 root root -
+d /var/usrlocal/qualys/cloud-agent/lib 0755 root root -
+d /var/log/qualys 0755 root root -
+d /var/lib/qualys 0755 root root -
+d /var/lib/qualys/cloud-agent 0755 root root -
+
+# Library symlinks - Poco libraries
 L /var/usrlocal/qualys/cloud-agent/lib/libPocoCrypto.so     - - - - libPocoCrypto.so.111
 L /var/usrlocal/qualys/cloud-agent/lib/libPocoFoundation.so - - - - libPocoFoundation.so.111
 L /var/usrlocal/qualys/cloud-agent/lib/libPocoJSON.so       - - - - libPocoJSON.so.111
+L /var/usrlocal/qualys/cloud-agent/lib/libPocoUtil.so       - - - - libPocoUtil.so.111
+L /var/usrlocal/qualys/cloud-agent/lib/libPocoXML.so        - - - - libPocoXML.so.111
+L /var/usrlocal/qualys/cloud-agent/lib/libPocoNet.so        - - - - libPocoNet.so.111
+L /var/usrlocal/qualys/cloud-agent/lib/libPocoNetSSL.so     - - - - libPocoNetSSL.so.111
+
+# System library symlinks commonly used by Qualys
+L /var/usrlocal/qualys/cloud-agent/lib/libaudit.so          - - - - libaudit.so.1
+L /var/usrlocal/qualys/cloud-agent/lib/libssl.so            - - - - libssl.so.3
+L /var/usrlocal/qualys/cloud-agent/lib/libcrypto.so         - - - - libcrypto.so.3
+L /var/usrlocal/qualys/cloud-agent/lib/libz.so              - - - - libz.so.1
+L /var/usrlocal/qualys/cloud-agent/lib/libcurl.so           - - - - libcurl.so.4
+EOF
+
+# Create additional tmpfiles.d configuration for runtime directories
+cat | tee /usr/lib/tmpfiles.d/ik-os-runtime.conf <<EOF
+# Runtime directories for IK-OS custom components
+# These directories may be created at runtime and need proper tmpfiles.d configuration
+
+# Qualys Cloud Agent runtime state
+d /var/lib/qualys/cloud-agent 0755 root root -
+f /var/lib/qualys/cloud-agent/.activated 0644 root root -
+
+# Additional runtime directories that may be created
+d /var/cache/qualys 0755 root root -
+d /var/run/qualys 0755 root root -
 EOF
 
 # Use a COPR Example:
@@ -568,15 +609,15 @@ echo "Configuring additional system Flatpaks for post-deployment installation...
 if [ -f "/ctx/flatpaks/additional-flatpaks.list" ]; then
     echo "Installing additional flatpaks list for post-deployment installation..."
 
-    # Create the directory for flatpak configuration in the standard Bluefin location
-    # Based on Universal Blue documentation, flatpak lists are typically in /usr/etc/flatpak/
-    mkdir -p /usr/etc/flatpak
+    # Create the directory for flatpak configuration in bootc-compliant location
+    # Use /etc/flatpak instead of /usr/etc to avoid bootc container lint failures
+    mkdir -p /etc/flatpak
 
-    # Copy the additional flatpaks list to the system in the expected location
-    cp /ctx/flatpaks/additional-flatpaks.list /usr/etc/flatpak/additional-flatpaks.list
-    chmod 644 /usr/etc/flatpak/additional-flatpaks.list
+    # Copy the additional flatpaks list to the system in the bootc-compliant location
+    cp /ctx/flatpaks/additional-flatpaks.list /etc/flatpak/additional-flatpaks.list
+    chmod 644 /etc/flatpak/additional-flatpaks.list
 
-    echo "Additional flatpaks list installed to /usr/etc/flatpak/additional-flatpaks.list"
+    echo "Additional flatpaks list installed to /etc/flatpak/additional-flatpaks.list"
     echo "Users can install these flatpaks after deployment using: ujust install-system-flatpaks"
 
     # Log which flatpaks are configured for installation
@@ -587,12 +628,6 @@ if [ -f "/ctx/flatpaks/additional-flatpaks.list" ]; then
             echo "  - $flatpak_id"
         fi
     done < "/ctx/flatpaks/additional-flatpaks.list"
-
-    # Also create a backup copy in /etc/flatpak for compatibility
-    mkdir -p /etc/flatpak
-    cp /ctx/flatpaks/additional-flatpaks.list /etc/flatpak/additional-flatpaks.list
-    chmod 644 /etc/flatpak/additional-flatpaks.list
-    echo "Backup copy also placed in /etc/flatpak/additional-flatpaks.list"
 else
     echo "No additional flatpaks list found, skipping flatpak configuration"
 fi
