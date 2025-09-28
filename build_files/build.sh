@@ -47,13 +47,13 @@ fi
 #
 
 # Create necessary directories for Qualys Cloud Agent
-mkdir -p /var/usrlocal/qualys/cloud-agent/bin
-mkdir -p /var/usrlocal/qualys/cloud-agent/data
-mkdir -p /var/usrlocal/qualys/cloud-agent/data/manifests
-mkdir -p /var/usrlocal/qualys/cloud-agent/lib
+# Use /usr/local which is symlinked to /var/usrlocal in immutable OS
+mkdir -p /usr/local/qualys/cloud-agent/bin
+mkdir -p /usr/local/qualys/cloud-agent/data
+mkdir -p /usr/local/qualys/cloud-agent/data/manifests
+mkdir -p /usr/local/qualys/cloud-agent/lib
 mkdir -p /etc/qualys/cloud-agent
 mkdir -p /etc/qualys/cloud-agent-defaults
-mkdir -p /var/log/qualys
 
 # Create compatibility directories and files for SysV init compatibility
 mkdir -p /etc/init.d
@@ -87,29 +87,36 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     ls -la usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "usr/local/qualys/cloud-agent/bin/ not found"
 
     # Copy files to their destinations
-    if [ -d "var/usrlocal" ]; then
-        cp -r var/usrlocal/* /var/usrlocal/ 2>/dev/null || true
+    # Copy to /usr/local first (which is the proper location for immutable OS)
+    if [ -d "usr/local" ]; then
+        echo "Copying usr/local contents to /usr/local..."
+        cp -r usr/local/* /usr/local/ 2>/dev/null || true
     fi
+
+    # Handle var/usrlocal if it exists in the RPM
+    if [ -d "var/usrlocal" ]; then
+        echo "Copying var/usrlocal contents to /usr/local..."
+        cp -r var/usrlocal/* /usr/local/ 2>/dev/null || true
+    fi
+
+    # Copy etc files
     if [ -d "etc" ]; then
         cp -r etc/* /etc/ 2>/dev/null || true
     fi
-    if [ -d "usr" ]; then
-        cp -r usr/* /usr/ 2>/dev/null || true
-    fi
 
-    # Special handling for usr/local -> /var/usrlocal mapping (since /usr/local is symlinked to /var/usrlocal)
-    if [ -d "usr/local" ]; then
-        echo "Copying usr/local contents to /var/usrlocal..."
-        cp -r usr/local/* /var/usrlocal/ 2>/dev/null || true
+    # Copy other usr files (excluding usr/local which we handled above)
+    if [ -d "usr" ]; then
+        # Create a temporary copy excluding usr/local to avoid conflicts
+        find usr -mindepth 1 -maxdepth 1 ! -name "local" -exec cp -r {} /usr/ \; 2>/dev/null || true
     fi
 
     # Debug: Verify files were copied correctly
     echo "Verifying file copy results:"
-    ls -la /var/usrlocal/qualys/cloud-agent/bin/ 2>/dev/null || echo "/var/usrlocal/qualys/cloud-agent/bin/ not found after copy"
-    ls -la /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found after copy"
+    ls -la /usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "/usr/local/qualys/cloud-agent/bin/ not found after copy"
+    ls -la /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found after copy"
 
     # Set proper permissions
-    chmod +x /var/usrlocal/qualys/cloud-agent/bin/* 2>/dev/null || true
+    chmod +x /usr/local/qualys/cloud-agent/bin/* 2>/dev/null || true
 
     # Cleanup
     cd /
@@ -119,29 +126,29 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
 
     # Verify the Qualys agent script exists and is executable
     echo "=== FINAL VERIFICATION ==="
-    echo "Checking for Qualys agent script at: /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+    echo "Checking for Qualys agent script at: /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 
     # Debug: Show directory structure
-    echo "Directory structure under /var/usrlocal/qualys/:"
-    find /var/usrlocal/qualys/ -type f -name "*qualys*" 2>/dev/null || echo "No qualys files found under /var/usrlocal/qualys/"
+    echo "Directory structure under /usr/local/qualys/:"
+    find /usr/local/qualys/ -type f -name "*qualys*" 2>/dev/null || echo "No qualys files found under /usr/local/qualys/"
 
     # Debug: Check if the directory exists
-    if [ -d "/var/usrlocal/qualys/cloud-agent/bin" ]; then
-        echo "Directory /var/usrlocal/qualys/cloud-agent/bin exists, contents:"
-        ls -la /var/usrlocal/qualys/cloud-agent/bin/
+    if [ -d "/usr/local/qualys/cloud-agent/bin" ]; then
+        echo "Directory /usr/local/qualys/cloud-agent/bin exists, contents:"
+        ls -la /usr/local/qualys/cloud-agent/bin/
     else
-        echo "Directory /var/usrlocal/qualys/cloud-agent/bin does not exist"
+        echo "Directory /usr/local/qualys/cloud-agent/bin does not exist"
     fi
 
-    if [ ! -f "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+    if [ ! -f "/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
         echo "Error: Qualys agent script not found after installation"
-        echo "Expected location: /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+        echo "Expected location: /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
         exit 1
     fi
 
-    if [ ! -x "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+    if [ ! -x "/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
         echo "Warning: Qualys agent script is not executable, fixing permissions..."
-        chmod +x /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh
+        chmod +x /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh
     fi
 
     echo "Qualys Cloud Agent installation verified successfully"
@@ -166,17 +173,14 @@ EOF
 
 cat | tee /usr/lib/tmpfiles.d/qualys.conf <<EOF
 # Tmpfiles for Qualys Cloud Agent
-# Directory creation
-d /var/usrlocal/qualys/cloud-agent 0755 root root -
-d /var/usrlocal/qualys/cloud-agent/bin 0755 root root -
-d /var/usrlocal/qualys/cloud-agent/data 0755 root root -
-d /var/usrlocal/qualys/cloud-agent/data/manifests 0755 root root -
-d /var/usrlocal/qualys/cloud-agent/lib 0755 root root -
+# Runtime directories only (build-time files are in /usr/local which persists)
 d /var/log/qualys 0755 root root -
 d /var/lib/qualys 0755 root root -
 d /var/lib/qualys/cloud-agent 0755 root root -
+d /var/cache/qualys 0755 root root -
+d /var/run/qualys 0755 root root -
 
-# Library symlinks - Poco libraries
+# Library symlinks - Poco libraries (using /var/usrlocal path for runtime)
 L /var/usrlocal/qualys/cloud-agent/lib/libPocoCrypto.so     - - - - libPocoCrypto.so.111
 L /var/usrlocal/qualys/cloud-agent/lib/libPocoFoundation.so - - - - libPocoFoundation.so.111
 L /var/usrlocal/qualys/cloud-agent/lib/libPocoJSON.so       - - - - libPocoJSON.so.111
@@ -193,19 +197,7 @@ L /var/usrlocal/qualys/cloud-agent/lib/libz.so              - - - - libz.so.1
 L /var/usrlocal/qualys/cloud-agent/lib/libcurl.so           - - - - libcurl.so.4
 EOF
 
-# Create additional tmpfiles.d configuration for runtime directories
-cat | tee /usr/lib/tmpfiles.d/ik-os-runtime.conf <<EOF
-# Runtime directories for IK-OS custom components
-# These directories may be created at runtime and need proper tmpfiles.d configuration
 
-# Qualys Cloud Agent runtime state
-d /var/lib/qualys/cloud-agent 0755 root root -
-f /var/lib/qualys/cloud-agent/.activated 0644 root root -
-
-# Additional runtime directories that may be created
-d /var/cache/qualys 0755 root root -
-d /var/run/qualys 0755 root root -
-EOF
 
 # Use a COPR Example:
 #
@@ -287,7 +279,7 @@ fi
 
 # Create first-boot activation script for post-deployment use
 echo "Creating Qualys Cloud Agent first-boot activation script..."
-cat > /var/usrlocal/qualys/cloud-agent/bin/qualys-first-boot-activation.sh << 'EOF'
+cat > /usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh << 'EOF'
 #!/bin/bash
 # Qualys Cloud Agent First-Boot Activation Script
 # This script handles activation on first boot when systemd is available
@@ -356,16 +348,16 @@ else
 fi
 EOF
 
-chmod +x /var/usrlocal/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+chmod +x /usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
 echo "First-boot activation script created and made executable"
 
 # Verify Qualys agent installation without attempting activation
-if [ -x "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+if [ -x "/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
     echo "✓ Qualys Cloud Agent installation verified successfully"
     echo "✓ Agent script is executable and ready for post-deployment activation"
     echo "✓ First-boot activation script created"
 else
-    echo "✗ Warning: Qualys Cloud Agent script not found at /var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+    echo "✗ Warning: Qualys Cloud Agent script not found at /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 fi
 
 # Create systemd service override to ensure proper startup with first-boot activation
@@ -406,14 +398,14 @@ echo "Created systemd service override for Qualys Cloud Agent"
 echo "Performing final Qualys Cloud Agent validation..."
 echo ""
 echo "=== QUALYS CLOUD AGENT INSTALLATION SUMMARY ==="
-if [ -f "/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+if [ -f "/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
     echo "✓ Qualys agent script installed successfully"
 else
     echo "✗ ERROR: Qualys agent script not found - this will cause service startup failure"
     exit 1
 fi
 
-if [ -f "/var/usrlocal/qualys/cloud-agent/bin/qualys-first-boot-activation.sh" ]; then
+if [ -f "/usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh" ]; then
     echo "✓ First-boot activation script created"
 else
     echo "✗ ERROR: First-boot activation script not found"
