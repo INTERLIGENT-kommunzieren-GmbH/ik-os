@@ -47,34 +47,32 @@ fi
 #
 
 # Create necessary directories for Qualys Cloud Agent
-# Check and handle /usr/local symlink in immutable OS
-echo "Checking /usr/local status..."
+# BOOTC IMMUTABLE OS STRATEGY: Use persistent locations that survive deployment
+echo "=== BOOTC IMMUTABLE OS FILE PLACEMENT STRATEGY ==="
+echo "For bootc systems, we need to place files in locations that persist across deployments"
+echo "Strategy: Use /opt for persistent application data + tmpfiles.d for runtime symlinks"
+
+# Create persistent directory structure in /opt (this persists in bootc)
+PERSISTENT_QUALYS_DIR="/opt/qualys/cloud-agent"
+echo "Creating persistent Qualys directory: $PERSISTENT_QUALYS_DIR"
+mkdir -p "${PERSISTENT_QUALYS_DIR}/bin"
+mkdir -p "${PERSISTENT_QUALYS_DIR}/data"
+mkdir -p "${PERSISTENT_QUALYS_DIR}/data/manifests"
+mkdir -p "${PERSISTENT_QUALYS_DIR}/lib"
+
+# Also create the traditional /usr/local structure for compatibility
+echo "Creating /usr/local structure for compatibility..."
 if [ -L "/usr/local" ]; then
     echo "/usr/local is a symlink pointing to: $(readlink /usr/local)"
-    echo "In immutable OS: Files will be copied to the symlink target during build"
-    echo "but we need to ensure they persist by using the correct build-time approach"
-    # For immutable OS, we need to work with the actual symlink structure
-    # The symlink will be recreated at runtime, so we prepare the target
-    USRLOCAL_SYMLINK_TARGET=$(readlink /usr/local)
-    echo "Symlink target: $USRLOCAL_SYMLINK_TARGET"
-
-    # Create the target directory structure (this will be in /var/usrlocal during build)
+    # Work with the symlink but don't rely on it for persistence
     USRLOCAL_TARGET=$(readlink -f /usr/local)
     echo "Resolved absolute path: $USRLOCAL_TARGET"
     mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/bin"
     mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/data"
     mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/data/manifests"
     mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/lib"
-elif [ -d "/usr/local" ]; then
-    echo "/usr/local is a directory"
-    USRLOCAL_TARGET="/usr/local"
-    mkdir -p /usr/local/qualys/cloud-agent/bin
-    mkdir -p /usr/local/qualys/cloud-agent/data
-    mkdir -p /usr/local/qualys/cloud-agent/data/manifests
-    mkdir -p /usr/local/qualys/cloud-agent/lib
 else
-    echo "/usr/local does not exist, creating directory structure"
-    USRLOCAL_TARGET="/usr/local"
+    echo "/usr/local is a directory or doesn't exist"
     mkdir -p /usr/local/qualys/cloud-agent/bin
     mkdir -p /usr/local/qualys/cloud-agent/data
     mkdir -p /usr/local/qualys/cloud-agent/data/manifests
@@ -117,35 +115,36 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     ls -la usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "usr/local/qualys/cloud-agent/bin/ not found"
 
     # Copy files to their destinations
-    # CRITICAL FIX: For immutable OS, always copy to persistent locations
-    # Files in /var/ during build time don't persist to deployed systems
+    # BOOTC IMMUTABLE OS STRATEGY: Copy to persistent locations that survive deployment
 
-    echo "=== IMMUTABLE OS FILE PLACEMENT STRATEGY ==="
-    if [ -L "/usr/local" ]; then
-        echo "/usr/local is a symlink - using immutable OS strategy"
-        echo "Build-time: Copy to /usr/local (which resolves to /var/usrlocal)"
-        echo "Runtime: /usr/local symlink will provide access to files"
+    echo "=== BOOTC IMMUTABLE OS FILE PLACEMENT STRATEGY ==="
+    echo "Primary target: /opt/qualys (persistent across bootc deployments)"
+    echo "Secondary target: /usr/local (for compatibility)"
 
-        # For immutable OS: Copy to the symlink itself, not the resolved target
-        # This ensures files end up in the right place in the container image
-        COPY_TARGET="/usr/local"
-        echo "Copy target: $COPY_TARGET (symlink will handle resolution)"
-    else
-        echo "/usr/local is a directory - using standard strategy"
-        COPY_TARGET="/usr/local"
-        echo "Copy target: $COPY_TARGET"
+    # Copy to persistent location first (/opt)
+    if [ -d "usr/local" ]; then
+        echo "Copying usr/local contents to persistent location /opt/qualys..."
+        cp -r usr/local/qualys/* /opt/qualys/ 2>/dev/null || true
     fi
 
-    # Copy to the appropriate usr/local location
+    # Also copy to /usr/local for compatibility (but don't rely on this for persistence)
+    if [ -L "/usr/local" ]; then
+        echo "Copying to /usr/local symlink for compatibility..."
+        COPY_TARGET="/usr/local"
+    else
+        echo "Copying to /usr/local directory for compatibility..."
+        COPY_TARGET="/usr/local"
+    fi
+
     if [ -d "usr/local" ]; then
         echo "Copying usr/local contents to $COPY_TARGET..."
-        # Use the symlink path directly, not the resolved path
         cp -r usr/local/* "$COPY_TARGET/" 2>/dev/null || true
     fi
 
-    # Handle var/usrlocal if it exists in the RPM (copy to same target)
+    # Handle var/usrlocal if it exists in the RPM
     if [ -d "var/usrlocal" ]; then
-        echo "Copying var/usrlocal contents to $COPY_TARGET..."
+        echo "Copying var/usrlocal contents to persistent and compatibility locations..."
+        cp -r var/usrlocal/* /opt/ 2>/dev/null || true
         cp -r var/usrlocal/* "$COPY_TARGET/" 2>/dev/null || true
     fi
 
@@ -156,30 +155,31 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
 
     # Copy other usr files (excluding usr/local which we handled above)
     if [ -d "usr" ]; then
-        # Create a temporary copy excluding usr/local to avoid conflicts
         find usr -mindepth 1 -maxdepth 1 ! -name "local" -exec cp -r {} /usr/ \; 2>/dev/null || true
     fi
 
     # Debug: Verify files were copied correctly
     echo "=== VERIFYING FILE COPY RESULTS ==="
 
-    # Check both the symlink path and resolved path for comprehensive verification
-    echo "Checking via /usr/local path (symlink):"
+    # Check persistent location first (/opt)
+    echo "Checking persistent location /opt/qualys/cloud-agent/bin/:"
+    ls -la /opt/qualys/cloud-agent/bin/ 2>/dev/null || echo "/opt/qualys/cloud-agent/bin/ not found"
+    ls -la /opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found in /opt"
+
+    # Check compatibility location (/usr/local)
+    echo "Checking compatibility location /usr/local/qualys/cloud-agent/bin/:"
     ls -la /usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "/usr/local/qualys/cloud-agent/bin/ not found"
     ls -la /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found via /usr/local"
+
+    # Set proper permissions on both locations
+    chmod +x /opt/qualys/cloud-agent/bin/* 2>/dev/null || true
+    chmod +x /usr/local/qualys/cloud-agent/bin/* 2>/dev/null || true
 
     if [ -L "/usr/local" ]; then
         USRLOCAL_TARGET=$(readlink -f /usr/local)
         echo "Also checking resolved symlink target: $USRLOCAL_TARGET"
         ls -la "$USRLOCAL_TARGET/qualys/cloud-agent/bin/" 2>/dev/null || echo "$USRLOCAL_TARGET/qualys/cloud-agent/bin/ not found"
-        ls -la "$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-cloud-agent.sh" 2>/dev/null || echo "qualys-cloud-agent.sh not found via resolved path"
-
-        # Set proper permissions on both paths
-        chmod +x /usr/local/qualys/cloud-agent/bin/* 2>/dev/null || true
         chmod +x "$USRLOCAL_TARGET/qualys/cloud-agent/bin/"* 2>/dev/null || true
-    else
-        # Set proper permissions
-        chmod +x /usr/local/qualys/cloud-agent/bin/* 2>/dev/null || true
     fi
 
     # Cleanup
@@ -255,83 +255,28 @@ fi
 # Ensure tmpfiles.d directory exists
 mkdir -p /usr/lib/tmpfiles.d/
 
-cat | tee /usr/lib/tmpfiles.d/epson.conf <<EOF
-# Tmpfiles for Epson Inkjet Driver
-# Directory creation
-d /var/opt/epson-inkjet-printer-escpr 0755 root root -
-d /var/opt/epson-inkjet-printer-escpr/lib64 0755 root root -
-d /var/opt/epson-inkjet-printer-escpr/cups 0755 root root -
-d /var/opt/epson-inkjet-printer-escpr/cups/lib 0755 root root -
-d /var/opt/epson-inkjet-printer-escpr/cups/lib/filter 0755 root root -
-d /var/opt/epson-inkjet-printer-escpr/doc 0755 root root -
-
-# Library symlinks
-L /var/opt/epson-inkjet-printer-escpr/lib64/libescpr.so     - - - - libescpr.so.1.0.0
-L /var/opt/epson-inkjet-printer-escpr/lib64/libescpr.so.1   - - - - libescpr.so.1.0.0
-
-# Epson filter files (these are actual files, not symlinks)
-f /var/opt/epson-inkjet-printer-escpr/cups/lib/filter/epson-escpr 0755 root root -
-f /var/opt/epson-inkjet-printer-escpr/cups/lib/filter/epson-escpr-wrapper 0755 root root -
-
-# Documentation files
-f /var/opt/epson-inkjet-printer-escpr/doc/AUTHORS 0644 root root -
-f /var/opt/epson-inkjet-printer-escpr/doc/COPYING 0644 root root -
-f /var/opt/epson-inkjet-printer-escpr/doc/NEWS 0644 root root -
-f /var/opt/epson-inkjet-printer-escpr/doc/README 0644 root root -
-EOF
+# Note: Epson driver tmpfiles.d not needed - rpm-ostree manages all files automatically
 
 cat | tee /usr/lib/tmpfiles.d/qualys.conf <<EOF
 # Tmpfiles for Qualys Cloud Agent
-# Runtime directories only (build-time files are in /usr/local which persists)
+# Runtime directories and symlinks for bootc immutable OS compatibility
 d /var/log/qualys 0755 root root -
 d /var/lib/qualys 0755 root root -
 d /var/lib/qualys/cloud-agent 0755 root root -
 d /var/cache/qualys 0755 root root -
 d /var/run/qualys 0755 root root -
 
-# Library symlinks - Poco libraries (using /var/usrlocal path for runtime)
-L /var/usrlocal/qualys/cloud-agent/lib/libPocoCrypto.so     - - - - libPocoCrypto.so.111
-L /var/usrlocal/qualys/cloud-agent/lib/libPocoFoundation.so - - - - libPocoFoundation.so.111
-L /var/usrlocal/qualys/cloud-agent/lib/libPocoJSON.so       - - - - libPocoJSON.so.111
-L /var/usrlocal/qualys/cloud-agent/lib/libPocoUtil.so       - - - - libPocoUtil.so.111
-L /var/usrlocal/qualys/cloud-agent/lib/libPocoXML.so        - - - - libPocoXML.so.111
-L /var/usrlocal/qualys/cloud-agent/lib/libPocoNet.so        - - - - libPocoNet.so.111
-L /var/usrlocal/qualys/cloud-agent/lib/libPocoNetSSL.so     - - - - libPocoNetSSL.so.111
+# Create /var/usrlocal directory structure
+d /var/usrlocal 0755 root root -
+d /var/usrlocal/qualys 0755 root root -
 
-# System library symlinks commonly used by Qualys
-L /var/usrlocal/qualys/cloud-agent/lib/libaudit.so          - - - - libaudit.so.1
-L /var/usrlocal/qualys/cloud-agent/lib/libaudit.so.1        - - - - libaudit.so.1.0.0
-L /var/usrlocal/qualys/cloud-agent/lib/libauparse.so        - - - - libauparse.so.0.0.0
-L /var/usrlocal/qualys/cloud-agent/lib/libauparse.so.0      - - - - libauparse.so.0.0.0
-L /var/usrlocal/qualys/cloud-agent/lib/libssl.so            - - - - libssl.so.3
-L /var/usrlocal/qualys/cloud-agent/lib/libcrypto.so         - - - - libcrypto.so.3
-L /var/usrlocal/qualys/cloud-agent/lib/libz.so              - - - - libz.so.1
-L /var/usrlocal/qualys/cloud-agent/lib/libcurl.so           - - - - libcurl.so.4
-L /var/usrlocal/qualys/cloud-agent/lib/libcurl.so.4         - - - - libcurl.so.4.8.0
-L /var/usrlocal/qualys/cloud-agent/lib/libduktape.so        - - - - libduktape.so.1.0.0
-L /var/usrlocal/qualys/cloud-agent/lib/libduktape.so.1      - - - - libduktape.so.1.0.0
-L /var/usrlocal/qualys/cloud-agent/lib/liblzma.so           - - - - liblzma.so.5.8.1
-L /var/usrlocal/qualys/cloud-agent/lib/liblzma.so.5         - - - - liblzma.so.5.8.1
-L /var/usrlocal/qualys/cloud-agent/lib/libmagic.so          - - - - libmagic.so.1.0.0
-L /var/usrlocal/qualys/cloud-agent/lib/libmagic.so.1        - - - - libmagic.so.1.0.0
-L /var/usrlocal/qualys/cloud-agent/lib/libpcre2-16.so.0     - - - - libpcre2-16.so.0.13.0
-L /var/usrlocal/qualys/cloud-agent/lib/libpcre2-32.so.0     - - - - libpcre2-32.so.0.13.0
-L /var/usrlocal/qualys/cloud-agent/lib/libpcre2-8.so.0      - - - - libpcre2-8.so.0.13.0
-L /var/usrlocal/qualys/cloud-agent/lib/libpcre2-posix.so.3  - - - - libpcre2-posix.so.3.0.5
-L /var/usrlocal/qualys/cloud-agent/lib/libprotobuf-lite.so  - - - - libprotobuf-lite.so.32.0.12
-L /var/usrlocal/qualys/cloud-agent/lib/libprotobuf-lite.so.32 - - - - libprotobuf-lite.so.32.0.12
-L /var/usrlocal/qualys/cloud-agent/lib/libprotobuf.so       - - - - libprotobuf.so.32.0.12
-L /var/usrlocal/qualys/cloud-agent/lib/libprotobuf.so.32    - - - - libprotobuf.so.32.0.12
-L /var/usrlocal/qualys/cloud-agent/lib/libproxy.so          - - - - libproxy.so.1.0.0
-L /var/usrlocal/qualys/cloud-agent/lib/libproxy.so.1        - - - - libproxy.so.1.0.0
-L /var/usrlocal/qualys/cloud-agent/lib/libsqlite3.so        - - - - libsqlite3.so.3.49.1
-L /var/usrlocal/qualys/cloud-agent/lib/libsqlite3.so.0      - - - - libsqlite3.so.3.49.1
-L /var/usrlocal/qualys/cloud-agent/lib/libssp.so.0          - - - - libssp.so.0.0.0
-L /var/usrlocal/qualys/cloud-agent/lib/libstdc++.so.6       - - - - libstdc++.so.6.0.25
-L /var/usrlocal/qualys/cloud-agent/lib/libxml2.so           - - - - libxml2.so.16.0.2
-L /var/usrlocal/qualys/cloud-agent/lib/libxml2.so.16        - - - - libxml2.so.16.0.2
-L /var/usrlocal/qualys/cloud-agent/lib/libyaml-0.so.2       - - - - libyaml-0.so.2.0.9
-L /var/usrlocal/qualys/cloud-agent/lib/libyaml.so           - - - - libyaml-0.so.2.0.9
+# Create symlinks from /var/usrlocal/qualys to persistent /opt/qualys location
+# This ensures systemd services can access files at expected runtime paths
+L /var/usrlocal/qualys/cloud-agent - - - - /opt/qualys/cloud-agent
+
+# Note: Individual library symlinks are not needed since we're using a directory symlink
+# The symlink /var/usrlocal/qualys/cloud-agent -> /opt/qualys/cloud-agent
+# will make all files and subdirectories accessible at the expected runtime paths
 EOF
 
 
