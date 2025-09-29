@@ -738,14 +738,28 @@ echo "Custom GDM logo installed successfully"
 # Install custom Plymouth watermark
 echo "Installing custom Plymouth watermark..."
 
-# Ensure Plymouth spinner theme directory exists
+# Ensure Plymouth theme directories exist
 mkdir -p /usr/share/plymouth/themes/spinner/
+mkdir -p /usr/share/plymouth/themes/bgrt/
 
-# Install the custom watermark files
+# Install the custom watermark files to spinner theme (used by BGRT)
 cp /ctx/logos/plymouth/watermark.png /usr/share/plymouth/themes/spinner/watermark.png
 cp /ctx/logos/plymouth/watermark.png /usr/share/plymouth/themes/spinner/silverblue-watermark.png
 chmod 644 /usr/share/plymouth/themes/spinner/watermark.png
 chmod 644 /usr/share/plymouth/themes/spinner/silverblue-watermark.png
+
+# Also install to bgrt theme directory for redundancy
+cp /ctx/logos/plymouth/watermark.png /usr/share/plymouth/themes/bgrt/watermark.png
+chmod 644 /usr/share/plymouth/themes/bgrt/watermark.png
+
+# Set the default Plymouth theme to ensure our watermark is used
+# The BGRT theme uses spinner ImageDir, so this should work for both boot and shutdown
+echo "Configuring Plymouth to use BGRT theme with custom watermark..."
+plymouth-set-default-theme bgrt
+
+# Regenerate initramfs to include the new theme configuration
+echo "Regenerating initramfs to include Plymouth changes..."
+dracut -f
 
 echo "Custom Plymouth watermark installation completed"
 
