@@ -50,10 +50,11 @@ fi
 # BOOTC IMMUTABLE OS STRATEGY: Use persistent locations that survive deployment
 echo "=== BOOTC IMMUTABLE OS FILE PLACEMENT STRATEGY ==="
 echo "For bootc systems, we need to place files in locations that persist across deployments"
-echo "Strategy: Use /opt for persistent application data + tmpfiles.d for runtime symlinks"
+echo "Strategy: Use /var/opt for persistent application data + tmpfiles.d for runtime symlinks"
+echo "Note: /opt is a symlink to /var/opt in this immutable OS system"
 
-# Create persistent directory structure in /opt (this persists in bootc)
-PERSISTENT_QUALYS_DIR="/opt/qualys/cloud-agent"
+# Create persistent directory structure in /var/opt (this persists in bootc)
+PERSISTENT_QUALYS_DIR="/var/opt/qualys/cloud-agent"
 echo "Creating persistent Qualys directory: $PERSISTENT_QUALYS_DIR"
 mkdir -p "${PERSISTENT_QUALYS_DIR}/bin"
 mkdir -p "${PERSISTENT_QUALYS_DIR}/data"
@@ -118,13 +119,13 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     # BOOTC IMMUTABLE OS STRATEGY: Copy to persistent locations that survive deployment
 
     echo "=== BOOTC IMMUTABLE OS FILE PLACEMENT STRATEGY ==="
-    echo "Primary target: /opt/qualys (persistent across bootc deployments)"
+    echo "Primary target: /var/opt/qualys (persistent across bootc deployments)"
     echo "Secondary target: /usr/local (for compatibility)"
 
-    # Copy to persistent location first (/opt)
+    # Copy to persistent location first (/var/opt)
     if [ -d "usr/local" ]; then
-        echo "Copying usr/local contents to persistent location /opt/qualys..."
-        cp -r usr/local/qualys/* /opt/qualys/ 2>/dev/null || true
+        echo "Copying usr/local contents to persistent location /var/opt/qualys..."
+        cp -r usr/local/qualys/* /var/opt/qualys/ 2>/dev/null || true
     fi
 
     # Also copy to /usr/local for compatibility (but don't rely on this for persistence)
@@ -144,7 +145,7 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     # Handle var/usrlocal if it exists in the RPM
     if [ -d "var/usrlocal" ]; then
         echo "Copying var/usrlocal contents to persistent and compatibility locations..."
-        cp -r var/usrlocal/* /opt/ 2>/dev/null || true
+        cp -r var/usrlocal/* /var/opt/ 2>/dev/null || true
         cp -r var/usrlocal/* "$COPY_TARGET/" 2>/dev/null || true
     fi
 
@@ -161,10 +162,10 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     # Debug: Verify files were copied correctly
     echo "=== VERIFYING FILE COPY RESULTS ==="
 
-    # Check persistent location first (/opt)
-    echo "Checking persistent location /opt/qualys/cloud-agent/bin/:"
-    ls -la /opt/qualys/cloud-agent/bin/ 2>/dev/null || echo "/opt/qualys/cloud-agent/bin/ not found"
-    ls -la /opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found in /opt"
+    # Check persistent location first (/var/opt)
+    echo "Checking persistent location /var/opt/qualys/cloud-agent/bin/:"
+    ls -la /var/opt/qualys/cloud-agent/bin/ 2>/dev/null || echo "/var/opt/qualys/cloud-agent/bin/ not found"
+    ls -la /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found in /var/opt"
 
     # Check compatibility location (/usr/local)
     echo "Checking compatibility location /usr/local/qualys/cloud-agent/bin/:"
@@ -172,7 +173,7 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     ls -la /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found via /usr/local"
 
     # Set proper permissions on both locations
-    chmod +x /opt/qualys/cloud-agent/bin/* 2>/dev/null || true
+    chmod +x /var/opt/qualys/cloud-agent/bin/* 2>/dev/null || true
     chmod +x /usr/local/qualys/cloud-agent/bin/* 2>/dev/null || true
 
     if [ -L "/usr/local" ]; then
@@ -270,12 +271,12 @@ d /var/run/qualys 0755 root root -
 d /var/usrlocal 0755 root root -
 d /var/usrlocal/qualys 0755 root root -
 
-# Create symlinks from /var/usrlocal/qualys to persistent /opt/qualys location
+# Create symlinks from /var/usrlocal/qualys to persistent /var/opt/qualys location
 # This ensures systemd services can access files at expected runtime paths
-L /var/usrlocal/qualys/cloud-agent - - - - /opt/qualys/cloud-agent
+L /var/usrlocal/qualys/cloud-agent - - - - /var/opt/qualys/cloud-agent
 
 # Note: Individual library symlinks are not needed since we're using a directory symlink
-# The symlink /var/usrlocal/qualys/cloud-agent -> /opt/qualys/cloud-agent
+# The symlink /var/usrlocal/qualys/cloud-agent -> /var/opt/qualys/cloud-agent
 # will make all files and subdirectories accessible at the expected runtime paths
 EOF
 
