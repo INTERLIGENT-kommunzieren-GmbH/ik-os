@@ -47,19 +47,16 @@ fi
 #
 
 # Create necessary directories for Qualys Cloud Agent
-# BOOTC IMMUTABLE OS STRATEGY: Use persistent locations that survive deployment
+# BOOTC IMMUTABLE OS STRATEGY: Use immutable locations during build, tmpfiles.d for runtime /var access
 echo "=== BOOTC IMMUTABLE OS FILE PLACEMENT STRATEGY ==="
-echo "For bootc systems, we need to place files in locations that persist across deployments"
-echo "Strategy: Use /var/opt for persistent application data + tmpfiles.d for runtime symlinks"
-echo "Note: /opt is a symlink to /var/opt in this immutable OS system"
+echo "For bootc systems, files must be placed in immutable locations during container build"
+echo "Strategy: Use /usr/local for application binaries (immutable) + tmpfiles.d for runtime /var symlinks"
+echo "Key insight: /var/* (including /var/opt) is ephemeral during build, only persistent after deployment"
 
-# Create persistent directory structure in /var/opt (this persists in bootc)
-PERSISTENT_QUALYS_DIR="/var/opt/qualys/cloud-agent"
-echo "Creating persistent Qualys directory: $PERSISTENT_QUALYS_DIR"
-mkdir -p "${PERSISTENT_QUALYS_DIR}/bin"
-mkdir -p "${PERSISTENT_QUALYS_DIR}/data"
-mkdir -p "${PERSISTENT_QUALYS_DIR}/data/manifests"
-mkdir -p "${PERSISTENT_QUALYS_DIR}/lib"
+# We will place files in /usr/local during build (immutable part of container image)
+# Then use tmpfiles.d to create runtime symlinks from /var/usrlocal/qualys/cloud-agent -> /usr/local/qualys/cloud-agent
+echo "Files will be placed in /usr/local/qualys/cloud-agent (immutable location)"
+echo "Runtime access via tmpfiles.d symlink: /var/usrlocal/qualys/cloud-agent -> /usr/local/qualys/cloud-agent"
 
 # Also create the traditional /usr/local structure for compatibility
 echo "Creating /usr/local structure for compatibility..."
@@ -118,50 +115,36 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     find . -name "qualys-cloud-agent.sh" -exec ls -la {} \; 2>/dev/null || echo "qualys-cloud-agent.sh not found in extraction"
     ls -la usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "usr/local/qualys/cloud-agent/bin/ not found"
 
-    # Copy directly to persistent location (/var/opt/qualys/cloud-agent)
-    echo "Copying extracted files directly to persistent location..."
+    # BOOTC STRATEGY: Copy files directly to immutable /usr/local location
+    # This is the correct approach for bootc - files in /usr/local are part of the immutable container image
+    echo "Copying extracted files to immutable location (/usr/local)..."
     if [ -d "usr/local/qualys/cloud-agent" ]; then
-        echo "Copying usr/local/qualys/cloud-agent/* to /var/opt/qualys/cloud-agent/"
-        cp -r usr/local/qualys/cloud-agent/* /var/opt/qualys/cloud-agent/ 2>/dev/null || true
+        echo "Copying usr/local/qualys/cloud-agent/* to /usr/local/qualys/cloud-agent/"
+        # Ensure target directory exists
+        mkdir -p /usr/local/qualys/cloud-agent
+        cp -r usr/local/qualys/cloud-agent/* /usr/local/qualys/cloud-agent/ 2>/dev/null || true
 
         # Verify the copy operation worked
-        echo "Verifying files were copied to persistent location..."
-        if [ -d "/var/opt/qualys/cloud-agent/bin" ]; then
-            echo "✓ /var/opt/qualys/cloud-agent/bin directory exists"
-            echo "Files in /var/opt/qualys/cloud-agent/bin/:"
-            ls -la /var/opt/qualys/cloud-agent/bin/ | head -10
-            echo "Total files copied: $(ls /var/opt/qualys/cloud-agent/bin/ | wc -l)"
+        echo "Verifying files were copied to immutable location..."
+        if [ -d "/usr/local/qualys/cloud-agent/bin" ]; then
+            echo "✓ /usr/local/qualys/cloud-agent/bin directory exists"
+            echo "Files in /usr/local/qualys/cloud-agent/bin/:"
+            ls -la /usr/local/qualys/cloud-agent/bin/ | head -10
+            echo "Total files copied: $(ls /usr/local/qualys/cloud-agent/bin/ | wc -l)"
         else
-            echo "✗ ERROR: /var/opt/qualys/cloud-agent/bin directory not found after copy!"
+            echo "✗ ERROR: /usr/local/qualys/cloud-agent/bin directory not found after copy!"
         fi
 
-        if [ -f "/var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
-            echo "✓ Key file qualys-cloud-agent.sh found in persistent location"
+        if [ -f "/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+            echo "✓ Key file qualys-cloud-agent.sh found in immutable location"
         else
-            echo "✗ ERROR: qualys-cloud-agent.sh not found in persistent location!"
+            echo "✗ ERROR: qualys-cloud-agent.sh not found in immutable location!"
         fi
     fi
 
-    # Copy files to their destinations
-    # BOOTC IMMUTABLE OS STRATEGY: Copy to persistent locations that survive deployment
-
-    echo "=== BOOTC IMMUTABLE OS FILE PLACEMENT STRATEGY ==="
-    echo "Primary target: /var/opt/qualys/cloud-agent (persistent across bootc deployments) - ALREADY DONE ABOVE"
-    echo "Secondary target: /usr/local (for compatibility)"
-
-    # Also copy to /usr/local for compatibility (but don't rely on this for persistence)
-    if [ -L "/usr/local" ]; then
-        echo "Copying to /usr/local symlink for compatibility..."
-        COPY_TARGET="/usr/local"
-    else
-        echo "Copying to /usr/local directory for compatibility..."
-        COPY_TARGET="/usr/local"
-    fi
-
-    if [ -d "usr/local" ]; then
-        echo "Copying usr/local contents to $COPY_TARGET..."
-        cp -r usr/local/* "$COPY_TARGET/" 2>/dev/null || true
-    fi
+    # Files are already copied to /usr/local above - this is the immutable location
+    echo "Files successfully placed in immutable location: /usr/local/qualys/cloud-agent"
+    echo "Runtime access will be provided via tmpfiles.d symlink to /var/usrlocal/qualys/cloud-agent"
 
     # Handle var/usrlocal if it exists in the RPM
     if [ -d "var/usrlocal" ]; then
@@ -180,27 +163,20 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
         find usr -mindepth 1 -maxdepth 1 ! -name "local" -exec cp -r {} /usr/ \; 2>/dev/null || true
     fi
 
-    # Debug: Verify files were copied correctly
+    # Verify files were copied correctly to immutable location
     echo "=== VERIFYING FILE COPY RESULTS ==="
 
-    # Check persistent location first (/var/opt)
-    echo "Checking persistent location /var/opt/qualys/cloud-agent/bin/:"
-    ls -la /var/opt/qualys/cloud-agent/bin/ 2>/dev/null || echo "/var/opt/qualys/cloud-agent/bin/ not found"
-    ls -la /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found in /var/opt"
+    # Check immutable location (/usr/local) - this is where files should be
+    echo "Checking immutable location /usr/local/qualys/cloud-agent/bin/:"
+    if [ -d "/usr/local/qualys/cloud-agent/bin" ]; then
+        ls -la /usr/local/qualys/cloud-agent/bin/ | head -10
+        echo "Total files in immutable location: $(ls /usr/local/qualys/cloud-agent/bin/ | wc -l)"
+        ls -la /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null && echo "✓ qualys-cloud-agent.sh found in immutable location"
+    else
+        echo "✗ ERROR: /usr/local/qualys/cloud-agent/bin/ not found!"
+    fi
 
-    # Debug: Check if the source directory structure exists
-    echo "Debug: Source directory structure:"
-    find usr/local -name "qualys*" -type d 2>/dev/null || echo "No qualys directories found in usr/local"
-    echo "Debug: Files in source usr/local/qualys/cloud-agent/bin/:"
-    ls -la usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "Source bin directory not found"
-
-    # Check compatibility location (/usr/local)
-    echo "Checking compatibility location /usr/local/qualys/cloud-agent/bin/:"
-    ls -la /usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "/usr/local/qualys/cloud-agent/bin/ not found"
-    ls -la /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found via /usr/local"
-
-    # Set proper permissions on both locations
-    chmod +x /var/opt/qualys/cloud-agent/bin/* 2>/dev/null || true
+    # Set proper permissions on immutable location
     chmod +x /usr/local/qualys/cloud-agent/bin/* 2>/dev/null || true
 
     if [ -L "/usr/local" ]; then
@@ -292,18 +268,18 @@ d /var/log/qualys 0755 root root -
 d /var/lib/qualys 0755 root root -
 d /var/lib/qualys/cloud-agent 0755 root root -
 d /var/cache/qualys 0755 root root -
-d /var/run/qualys 0755 root root -
+d /run/qualys 0755 root root -
 
 # Create /var/usrlocal directory structure
 d /var/usrlocal 0755 root root -
 d /var/usrlocal/qualys 0755 root root -
 
-# Create symlinks from /var/usrlocal/qualys to persistent /var/opt/qualys location
+# Create symlinks from /var/usrlocal/qualys to immutable /usr/local/qualys location
 # This ensures systemd services can access files at expected runtime paths
-L /var/usrlocal/qualys/cloud-agent - - - - /var/opt/qualys/cloud-agent
+L /var/usrlocal/qualys/cloud-agent - - - - /usr/local/qualys/cloud-agent
 
 # Note: Individual library symlinks are not needed since we're using a directory symlink
-# The symlink /var/usrlocal/qualys/cloud-agent -> /var/opt/qualys/cloud-agent
+# The symlink /var/usrlocal/qualys/cloud-agent -> /usr/local/qualys/cloud-agent
 # will make all files and subdirectories accessible at the expected runtime paths
 EOF
 
