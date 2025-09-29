@@ -274,13 +274,17 @@ d /run/qualys 0755 root root -
 d /var/usrlocal 0755 root root -
 d /var/usrlocal/qualys 0755 root root -
 
-# Create symlinks from /var/usrlocal/qualys to immutable /usr/local/qualys location
+# Also create /var/opt path for legacy/compatibility expectations
+d /var/opt 0755 root root -
+d /var/opt/qualys 0755 root root -
+
+# Create symlinks from runtime paths to immutable /usr/local/qualys location
 # This ensures systemd services can access files at expected runtime paths
 L /var/usrlocal/qualys/cloud-agent - - - - /usr/local/qualys/cloud-agent
+L /var/opt/qualys/cloud-agent - - - - /usr/local/qualys/cloud-agent
 
 # Note: Individual library symlinks are not needed since we're using a directory symlink
-# The symlink /var/usrlocal/qualys/cloud-agent -> /usr/local/qualys/cloud-agent
-# will make all files and subdirectories accessible at the expected runtime paths
+# The symlinks above expose all files and subdirectories at the expected runtime paths
 EOF
 
 
