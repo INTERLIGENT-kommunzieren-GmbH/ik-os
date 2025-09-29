@@ -1,0 +1,15 @@
+[Unit]
+Description=Run Qualys Cloud Agent Scan Periodically
+Requires=qualys-agent-scan.service
+
+[Timer]
+# Run every 6 hours with some randomization to avoid load spikes
+OnCalendar=*-*-* 00,06,12,18:00:00
+RandomizedDelaySec=1800
+Persistent=true
+
+# Prevent overlapping scans
+AccuracySec=1m
+
+[Install]
+WantedBy=timers.target

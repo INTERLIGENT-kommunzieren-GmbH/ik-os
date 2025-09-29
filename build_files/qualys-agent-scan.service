@@ -1,0 +1,31 @@
+[Unit]
+Description=Qualys Cloud Agent Periodic Scan
+Documentation=https://www.qualys.com/
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/qualys-agent-wrapper.sh run
+User=root
+Group=root
+WorkingDirectory=/usr/libexec/qualys/cloud-agent
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=HOME=/root
+
+# Timeout for scan completion
+TimeoutStartSec=3900
+TimeoutStopSec=60
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qualys-agent-scan
+
+# Security settings
+NoNewPrivileges=false
+PrivateTmp=false
+ProtectSystem=false
+ProtectHome=false
+ReadWritePaths=/var/log/qualys /var/run /etc/qualys /usr/libexec/qualys

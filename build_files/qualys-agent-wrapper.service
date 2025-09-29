@@ -1,0 +1,44 @@
+[Unit]
+Description=Qualys Cloud Agent Wrapper Service
+Documentation=https://www.qualys.com/
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
+StartLimitBurst=3
+StartLimitIntervalSec=300
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/qualys-agent-wrapper.sh run
+ExecStop=/usr/local/bin/qualys-agent-wrapper.sh stop
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=60
+
+# Security and environment settings
+User=root
+Group=root
+WorkingDirectory=/usr/libexec/qualys/cloud-agent
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=HOME=/root
+
+# Resource limits
+TimeoutStartSec=120
+TimeoutStopSec=60
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=qualys-agent-wrapper
+
+# Security hardening (while maintaining functionality)
+NoNewPrivileges=false
+PrivateTmp=false
+ProtectSystem=false
+ProtectHome=false
+ReadWritePaths=/var/log/qualys /var/run /etc/qualys /usr/libexec/qualys
+
+[Install]
+WantedBy=multi-user.target

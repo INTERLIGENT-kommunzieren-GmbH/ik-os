@@ -266,47 +266,59 @@ fi
 
 #systemctl enable podman.socket
 
-# Create systemd service for Qualys Cloud Agent if it doesn't exist
-if [ ! -f "/usr/lib/systemd/system/qualys-cloud-agent.service" ] && [ ! -f "/etc/systemd/system/qualys-cloud-agent.service" ]; then
-    echo "Creating systemd service file for Qualys Cloud Agent..."
-
-    # Create the systemd service file with improved configuration
-    cat > /usr/lib/systemd/system/qualys-cloud-agent.service << 'EOF'
-[Unit]
-Description=Qualys Cloud Agent
-Wants=network-online.target systemd-tmpfiles-setup.service
-After=network-online.target systemd-tmpfiles-setup.service local-fs.target
-ConditionPathExists=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh
-
-[Service]
-Type=forking
-ExecStartPre=/bin/bash -c 'test -x /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh || exit 203'
-ExecStartPre=/bin/sleep 5
-ExecStart=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
-ExecStop=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
-ExecReload=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh restart
-PIDFile=/var/run/qualys-cloud-agent.pid
-Restart=on-failure
-RestartSec=30
-StartLimitBurst=3
-StartLimitIntervalSec=300
-TimeoutStartSec=60
-TimeoutStopSec=30
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    echo "Systemd service file created with improved configuration"
-fi
-
-# Enable Qualys Cloud Agent service if it exists
-if systemctl list-unit-files qualys-cloud-agent.service >/dev/null 2>&1; then
-    systemctl enable qualys-cloud-agent.service
-    echo "Successfully enabled qualys-cloud-agent.service"
+# Install Qualys Cloud Agent Wrapper Script
+echo "Installing Qualys Cloud Agent wrapper script..."
+if [ -f "/ctx/qualys-agent-wrapper.sh" ]; then
+    cp /ctx/qualys-agent-wrapper.sh /usr/local/bin/qualys-agent-wrapper.sh
+    chmod 755 /usr/local/bin/qualys-agent-wrapper.sh
+    echo "✓ Qualys wrapper script installed to /usr/local/bin/qualys-agent-wrapper.sh"
 else
-    echo "Warning: qualys-cloud-agent.service not found, skipping enable"
+    echo "✗ ERROR: Qualys wrapper script not found at /ctx/qualys-agent-wrapper.sh"
+    exit 1
 fi
+
+# Install Qualys Cloud Agent systemd service files (wrapper-based)
+echo "Installing Qualys Cloud Agent systemd service files..."
+
+# Install the wrapper service (for continuous operation if needed)
+if [ -f "/ctx/qualys-agent-wrapper.service" ]; then
+    cp /ctx/qualys-agent-wrapper.service /usr/lib/systemd/system/qualys-agent-wrapper.service
+    echo "✓ Qualys wrapper service installed"
+else
+    echo "✗ ERROR: Qualys wrapper service file not found"
+    exit 1
+fi
+
+# Install the periodic scan service and timer (recommended approach)
+if [ -f "/ctx/qualys-agent-scan.service" ]; then
+    cp /ctx/qualys-agent-scan.service /usr/lib/systemd/system/qualys-agent-scan.service
+    echo "✓ Qualys scan service installed"
+else
+    echo "✗ ERROR: Qualys scan service file not found"
+    exit 1
+fi
+
+if [ -f "/ctx/qualys-agent-scan.timer" ]; then
+    cp /ctx/qualys-agent-scan.timer /usr/lib/systemd/system/qualys-agent-scan.timer
+    echo "✓ Qualys scan timer installed"
+else
+    echo "✗ ERROR: Qualys scan timer file not found"
+    exit 1
+fi
+
+# Disable the original problematic service if it exists and enable our wrapper-based approach
+if systemctl list-unit-files qualys-cloud-agent.service >/dev/null 2>&1; then
+    systemctl disable qualys-cloud-agent.service 2>/dev/null || true
+    echo "✓ Disabled original qualys-cloud-agent.service (problematic)"
+fi
+
+# Enable the timer-based approach (recommended for security agents)
+systemctl enable qualys-agent-scan.timer
+echo "✓ Enabled qualys-agent-scan.timer for periodic security scans"
+
+# Note: The wrapper service is available but not enabled by default
+# Users can enable it manually if they prefer continuous operation:
+# systemctl enable qualys-agent-wrapper.service
 
 # NOTE: Qualys Cloud Agent activation is deferred to post-deployment
 # Activation cannot be performed during container build because systemd is not available.
@@ -426,42 +438,26 @@ else
     echo "✗ Warning: Qualys Cloud Agent script not found at $QUALYS_SCRIPT_PATH"
 fi
 
-# Create systemd service override to ensure proper startup with first-boot activation
-mkdir -p /etc/systemd/system/qualys-cloud-agent.service.d
-cat > /etc/systemd/system/qualys-cloud-agent.service.d/override.conf << 'EOF'
-[Unit]
-# Ensure network is fully available before starting
-After=network-online.target
-Wants=network-online.target
+# Remove any existing problematic systemd override configuration
+if [ -d "/etc/systemd/system/qualys-cloud-agent.service.d" ]; then
+    echo "Removing problematic systemd override configuration..."
+    rm -rf /etc/systemd/system/qualys-cloud-agent.service.d
+    echo "✓ Removed problematic override configuration"
+fi
 
-[Service]
-# Verify executable exists before attempting to start
-ExecStartPre=/bin/bash -c 'if [ ! -f /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent ]; then echo "ERROR: Qualys agent binary not found"; exit 203; fi'
-# Perform first-boot activation if needed (this will be skipped if already activated)
-ExecStartPre=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
-# Add a delay to ensure system is fully ready after activation
-ExecStartPre=/bin/sleep 10
-# Run the agent binary directly (not the script with start/stop commands)
-ExecStart=
-ExecStart=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
-# The agent doesn't support stop commands, let systemd handle termination
-ExecStop=
-# No reload support
-ExecReload=
-# Change service type to simple since we're running the binary directly
-Type=simple
-# Restart on failure with exponential backoff
-RestartSec=30
-StartLimitBurst=5
-StartLimitIntervalSec=300
-# Set working directory to agent directory
-WorkingDirectory=/usr/libexec/qualys/cloud-agent
-# Ensure proper environment
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-# Run as root (required for system scanning)
-User=root
-Group=root
-EOF
+# Install tmpfiles.d configuration for proper directory permissions
+if [ -f "/ctx/qualys-wrapper.conf" ]; then
+    cp /ctx/qualys-wrapper.conf /usr/lib/tmpfiles.d/qualys-wrapper.conf
+    echo "✓ Installed tmpfiles.d configuration for Qualys wrapper"
+else
+    echo "✗ ERROR: Qualys tmpfiles.d configuration not found"
+    exit 1
+fi
+
+# Create log directory for wrapper script
+mkdir -p /var/log/qualys
+chmod 755 /var/log/qualys
+echo "✓ Created log directory for Qualys wrapper"
 
 echo "Created systemd service override for Qualys Cloud Agent"
 
@@ -494,18 +490,35 @@ else
     exit 1
 fi
 
-echo "✓ Systemd service configured with first-boot activation"
+if [ -f "/usr/local/bin/qualys-agent-wrapper.sh" ]; then
+    echo "✓ Qualys wrapper script installed successfully"
+else
+    echo "✗ ERROR: Qualys wrapper script not found"
+    exit 1
+fi
+
+if [ -f "/usr/lib/systemd/system/qualys-agent-scan.timer" ]; then
+    echo "✓ Qualys scan timer configured for periodic execution"
+else
+    echo "✗ ERROR: Qualys scan timer not found"
+    exit 1
+fi
+
 echo ""
-echo "IMPORTANT: Qualys Cloud Agent activation is deferred to post-deployment."
-echo "The agent will be automatically activated when the systemd service starts"
-echo "after the OS is deployed and systemd is running."
+echo "IMPORTANT: Qualys Cloud Agent is now configured with a wrapper-based approach."
+echo "This resolves the systemd environment incompatibility issues discovered during testing."
 echo ""
-echo "Activation process:"
-echo "1. On first boot, systemd will start qualys-cloud-agent.service"
-echo "2. The service will run qualys-first-boot-activation.sh as ExecStartPre"
-echo "3. The activation script will activate the agent using stored configuration"
-echo "4. Once activated, the agent will start normally"
-echo "5. Subsequent boots will skip activation (activation flag prevents re-activation)"
+echo "Deployment configuration:"
+echo "1. Qualys agent will run via wrapper script that handles environment setup"
+echo "2. Periodic scans are scheduled via systemd timer (every 6 hours with randomization)"
+echo "3. Manual execution available via: /usr/local/bin/qualys-agent-wrapper.sh"
+echo "4. Wrapper handles activation, environment setup, and error recovery"
+echo "5. Logs are written to /var/log/qualys/qualys-wrapper.log"
+echo ""
+echo "Service management:"
+echo "- Timer-based (recommended): systemctl {start|stop|status} qualys-agent-scan.timer"
+echo "- Continuous service: systemctl {enable|start|stop} qualys-agent-wrapper.service"
+echo "- Manual execution: /usr/local/bin/qualys-agent-wrapper.sh {run|stop|status|test}"
 echo "================================================"
 
 # Clean up compatibility workarounds
