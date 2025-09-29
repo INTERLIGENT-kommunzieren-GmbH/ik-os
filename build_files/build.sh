@@ -282,9 +282,9 @@ ConditionPathExists=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh
 Type=forking
 ExecStartPre=/bin/bash -c 'test -x /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh || exit 203'
 ExecStartPre=/bin/sleep 5
-ExecStart=/bin/bash /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
-ExecStop=/bin/bash /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
-ExecReload=/bin/bash /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh restart
+ExecStart=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
+ExecStop=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
+ExecReload=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh restart
 PIDFile=/var/run/qualys-cloud-agent.pid
 Restart=on-failure
 RestartSec=30
@@ -347,7 +347,7 @@ cat > "$SCRIPT_PATH" << 'EOF'
 
 ACTIVATION_FLAG="/var/lib/qualys/cloud-agent/.activated"
 ACTIVATION_CONFIG="/etc/qualys/cloud-agent/activation.conf"
-AGENT_SCRIPT="/var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+AGENT_SCRIPT="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 
 # Create state directory
 mkdir -p /var/lib/qualys/cloud-agent
@@ -436,24 +436,24 @@ Wants=network-online.target
 
 [Service]
 # Verify executable exists before attempting to start
-ExecStartPre=/bin/bash -c 'if [ ! -f /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh ]; then echo "ERROR: Qualys agent script not found"; exit 203; fi'
+ExecStartPre=/bin/bash -c 'if [ ! -f /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh ]; then echo "ERROR: Qualys agent script not found"; exit 203; fi'
 # Perform first-boot activation if needed (this will be skipped if already activated)
-ExecStartPre=/bin/bash /var/opt/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+ExecStartPre=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
 # Add a delay to ensure system is fully ready after activation
 ExecStartPre=/bin/sleep 10
 # Use explicit bash interpreter to avoid exec issues
 ExecStart=
-ExecStart=/bin/bash /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
+ExecStart=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
 ExecStop=
-ExecStop=/bin/bash /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
+ExecStop=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
 ExecReload=
-ExecReload=/bin/bash /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh restart
+ExecReload=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh restart
 # Restart on failure with exponential backoff
 RestartSec=30
 StartLimitBurst=5
 StartLimitIntervalSec=300
 # Set working directory to agent directory
-WorkingDirectory=/var/opt/qualys/cloud-agent
+WorkingDirectory=/usr/libexec/qualys/cloud-agent
 # Ensure proper environment
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EOF
