@@ -51,20 +51,23 @@ fi
 echo "Checking /usr/local status..."
 if [ -L "/usr/local" ]; then
     echo "/usr/local is a symlink pointing to: $(readlink /usr/local)"
-    # Create directories via the symlink target
-    USRLOCAL_TARGET=$(readlink /usr/local)
+    # Resolve the symlink to an absolute path
+    USRLOCAL_TARGET=$(readlink -f /usr/local)
+    echo "Resolved absolute path: $USRLOCAL_TARGET"
     mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/bin"
     mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/data"
     mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/data/manifests"
     mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/lib"
 elif [ -d "/usr/local" ]; then
     echo "/usr/local is a directory"
+    USRLOCAL_TARGET="/usr/local"
     mkdir -p /usr/local/qualys/cloud-agent/bin
     mkdir -p /usr/local/qualys/cloud-agent/data
     mkdir -p /usr/local/qualys/cloud-agent/data/manifests
     mkdir -p /usr/local/qualys/cloud-agent/lib
 else
     echo "/usr/local does not exist, creating directory structure"
+    USRLOCAL_TARGET="/usr/local"
     mkdir -p /usr/local/qualys/cloud-agent/bin
     mkdir -p /usr/local/qualys/cloud-agent/data
     mkdir -p /usr/local/qualys/cloud-agent/data/manifests
@@ -109,8 +112,8 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     # Copy files to their destinations
     # Determine the correct target for /usr/local content
     if [ -L "/usr/local" ]; then
-        USRLOCAL_TARGET=$(readlink /usr/local)
-        echo "Using symlink target for /usr/local: $USRLOCAL_TARGET"
+        USRLOCAL_TARGET=$(readlink -f /usr/local)
+        echo "Using resolved symlink target for /usr/local: $USRLOCAL_TARGET"
     else
         USRLOCAL_TARGET="/usr/local"
         echo "Using direct path for /usr/local: $USRLOCAL_TARGET"
@@ -142,8 +145,8 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     # Debug: Verify files were copied correctly
     echo "Verifying file copy results:"
     if [ -L "/usr/local" ]; then
-        USRLOCAL_TARGET=$(readlink /usr/local)
-        echo "Checking symlink target: $USRLOCAL_TARGET"
+        USRLOCAL_TARGET=$(readlink -f /usr/local)
+        echo "Checking resolved symlink target: $USRLOCAL_TARGET"
         ls -la "$USRLOCAL_TARGET/qualys/cloud-agent/bin/" 2>/dev/null || echo "$USRLOCAL_TARGET/qualys/cloud-agent/bin/ not found after copy"
         ls -la "$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-cloud-agent.sh" 2>/dev/null || echo "qualys-cloud-agent.sh not found after copy"
         # Set proper permissions
@@ -166,11 +169,12 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
 
     # Determine the correct path to check
     if [ -L "/usr/local" ]; then
-        USRLOCAL_TARGET=$(readlink /usr/local)
+        USRLOCAL_TARGET=$(readlink -f /usr/local)
         QUALYS_BIN_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin"
         QUALYS_SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
-        echo "Checking for Qualys agent script at: $QUALYS_SCRIPT_PATH (via symlink)"
+        echo "Checking for Qualys agent script at: $QUALYS_SCRIPT_PATH (via resolved symlink)"
     else
+        USRLOCAL_TARGET="/usr/local"
         QUALYS_BIN_PATH="/usr/local/qualys/cloud-agent/bin"
         QUALYS_SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
         echo "Checking for Qualys agent script at: $QUALYS_SCRIPT_PATH"
@@ -213,10 +217,24 @@ cat | tee /usr/lib/tmpfiles.d/epson.conf <<EOF
 # Directory creation
 d /var/opt/epson-inkjet-printer-escpr 0755 root root -
 d /var/opt/epson-inkjet-printer-escpr/lib64 0755 root root -
+d /var/opt/epson-inkjet-printer-escpr/cups 0755 root root -
+d /var/opt/epson-inkjet-printer-escpr/cups/lib 0755 root root -
+d /var/opt/epson-inkjet-printer-escpr/cups/lib/filter 0755 root root -
+d /var/opt/epson-inkjet-printer-escpr/doc 0755 root root -
 
 # Library symlinks
 L /var/opt/epson-inkjet-printer-escpr/lib64/libescpr.so     - - - - libescpr.so.1.0.0
 L /var/opt/epson-inkjet-printer-escpr/lib64/libescpr.so.1   - - - - libescpr.so.1.0.0
+
+# Epson filter files (these are actual files, not symlinks)
+f /var/opt/epson-inkjet-printer-escpr/cups/lib/filter/epson-escpr 0755 root root -
+f /var/opt/epson-inkjet-printer-escpr/cups/lib/filter/epson-escpr-wrapper 0755 root root -
+
+# Documentation files
+f /var/opt/epson-inkjet-printer-escpr/doc/AUTHORS 0644 root root -
+f /var/opt/epson-inkjet-printer-escpr/doc/COPYING 0644 root root -
+f /var/opt/epson-inkjet-printer-escpr/doc/NEWS 0644 root root -
+f /var/opt/epson-inkjet-printer-escpr/doc/README 0644 root root -
 EOF
 
 cat | tee /usr/lib/tmpfiles.d/qualys.conf <<EOF
@@ -239,10 +257,38 @@ L /var/usrlocal/qualys/cloud-agent/lib/libPocoNetSSL.so     - - - - libPocoNetSS
 
 # System library symlinks commonly used by Qualys
 L /var/usrlocal/qualys/cloud-agent/lib/libaudit.so          - - - - libaudit.so.1
+L /var/usrlocal/qualys/cloud-agent/lib/libaudit.so.1        - - - - libaudit.so.1.0.0
+L /var/usrlocal/qualys/cloud-agent/lib/libauparse.so        - - - - libauparse.so.0.0.0
+L /var/usrlocal/qualys/cloud-agent/lib/libauparse.so.0      - - - - libauparse.so.0.0.0
 L /var/usrlocal/qualys/cloud-agent/lib/libssl.so            - - - - libssl.so.3
 L /var/usrlocal/qualys/cloud-agent/lib/libcrypto.so         - - - - libcrypto.so.3
 L /var/usrlocal/qualys/cloud-agent/lib/libz.so              - - - - libz.so.1
 L /var/usrlocal/qualys/cloud-agent/lib/libcurl.so           - - - - libcurl.so.4
+L /var/usrlocal/qualys/cloud-agent/lib/libcurl.so.4         - - - - libcurl.so.4.8.0
+L /var/usrlocal/qualys/cloud-agent/lib/libduktape.so        - - - - libduktape.so.1.0.0
+L /var/usrlocal/qualys/cloud-agent/lib/libduktape.so.1      - - - - libduktape.so.1.0.0
+L /var/usrlocal/qualys/cloud-agent/lib/liblzma.so           - - - - liblzma.so.5.8.1
+L /var/usrlocal/qualys/cloud-agent/lib/liblzma.so.5         - - - - liblzma.so.5.8.1
+L /var/usrlocal/qualys/cloud-agent/lib/libmagic.so          - - - - libmagic.so.1.0.0
+L /var/usrlocal/qualys/cloud-agent/lib/libmagic.so.1        - - - - libmagic.so.1.0.0
+L /var/usrlocal/qualys/cloud-agent/lib/libpcre2-16.so.0     - - - - libpcre2-16.so.0.13.0
+L /var/usrlocal/qualys/cloud-agent/lib/libpcre2-32.so.0     - - - - libpcre2-32.so.0.13.0
+L /var/usrlocal/qualys/cloud-agent/lib/libpcre2-8.so.0      - - - - libpcre2-8.so.0.13.0
+L /var/usrlocal/qualys/cloud-agent/lib/libpcre2-posix.so.3  - - - - libpcre2-posix.so.3.0.5
+L /var/usrlocal/qualys/cloud-agent/lib/libprotobuf-lite.so  - - - - libprotobuf-lite.so.32.0.12
+L /var/usrlocal/qualys/cloud-agent/lib/libprotobuf-lite.so.32 - - - - libprotobuf-lite.so.32.0.12
+L /var/usrlocal/qualys/cloud-agent/lib/libprotobuf.so       - - - - libprotobuf.so.32.0.12
+L /var/usrlocal/qualys/cloud-agent/lib/libprotobuf.so.32    - - - - libprotobuf.so.32.0.12
+L /var/usrlocal/qualys/cloud-agent/lib/libproxy.so          - - - - libproxy.so.1.0.0
+L /var/usrlocal/qualys/cloud-agent/lib/libproxy.so.1        - - - - libproxy.so.1.0.0
+L /var/usrlocal/qualys/cloud-agent/lib/libsqlite3.so        - - - - libsqlite3.so.3.49.1
+L /var/usrlocal/qualys/cloud-agent/lib/libsqlite3.so.0      - - - - libsqlite3.so.3.49.1
+L /var/usrlocal/qualys/cloud-agent/lib/libssp.so.0          - - - - libssp.so.0.0.0
+L /var/usrlocal/qualys/cloud-agent/lib/libstdc++.so.6       - - - - libstdc++.so.6.0.25
+L /var/usrlocal/qualys/cloud-agent/lib/libxml2.so           - - - - libxml2.so.16.0.2
+L /var/usrlocal/qualys/cloud-agent/lib/libxml2.so.16        - - - - libxml2.so.16.0.2
+L /var/usrlocal/qualys/cloud-agent/lib/libyaml-0.so.2       - - - - libyaml-0.so.2.0.9
+L /var/usrlocal/qualys/cloud-agent/lib/libyaml.so           - - - - libyaml-0.so.2.0.9
 EOF
 
 
@@ -330,7 +376,7 @@ echo "Creating Qualys Cloud Agent first-boot activation script..."
 
 # Determine the correct path for script creation
 if [ -L "/usr/local" ]; then
-    USRLOCAL_TARGET=$(readlink /usr/local)
+    USRLOCAL_TARGET=$(readlink -f /usr/local)
     SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
 else
     SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
@@ -407,7 +453,7 @@ EOF
 
 # Set permissions for the activation script
 if [ -L "/usr/local" ]; then
-    USRLOCAL_TARGET=$(readlink /usr/local)
+    USRLOCAL_TARGET=$(readlink -f /usr/local)
     chmod +x "$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
 else
     chmod +x /usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
@@ -417,7 +463,7 @@ echo "First-boot activation script created and made executable"
 # Verify Qualys agent installation without attempting activation
 # Determine the correct path to check
 if [ -L "/usr/local" ]; then
-    USRLOCAL_TARGET=$(readlink /usr/local)
+    USRLOCAL_TARGET=$(readlink -f /usr/local)
     QUALYS_SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 else
     QUALYS_SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
@@ -472,7 +518,7 @@ echo ""
 echo "=== QUALYS CLOUD AGENT INSTALLATION SUMMARY ==="
 # Determine the correct paths for final validation
 if [ -L "/usr/local" ]; then
-    USRLOCAL_TARGET=$(readlink /usr/local)
+    USRLOCAL_TARGET=$(readlink -f /usr/local)
     QUALYS_SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
     ACTIVATION_SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
 else
