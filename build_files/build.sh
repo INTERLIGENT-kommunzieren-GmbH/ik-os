@@ -35,7 +35,7 @@ fi
 # - Agent installation and file extraction happens during image build
 # - Agent activation is deferred to first boot when systemd is available
 # - Activation configuration is stored in /etc/qualys/cloud-agent/activation.conf
-# - First-boot activation script is created at /usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh (runtime: /var/usrlocal)
+# - First-boot activation script is created at /usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh (runtime via symlink: /var/opt/qualys/cloud-agent/bin)
 # - Systemd service is configured to run activation script before starting the agent
 # - Activation flag prevents re-activation on subsequent boots
 #
@@ -50,32 +50,20 @@ fi
 # BOOTC IMMUTABLE OS STRATEGY: Use immutable locations during build, tmpfiles.d for runtime /var access
 echo "=== BOOTC IMMUTABLE OS FILE PLACEMENT STRATEGY ==="
 echo "For bootc systems, files must be placed in immutable locations during container build"
-echo "Strategy: Use /usr/local for application binaries (immutable) + tmpfiles.d for runtime /var symlinks"
+echo "Strategy: Use /usr/libexec for application binaries (immutable) + tmpfiles.d for runtime /var symlinks"
 echo "Key insight: /var/* (including /var/opt) is ephemeral during build, only persistent after deployment"
 
-# We will place files in /usr/local during build (immutable part of container image)
-# Then use tmpfiles.d to create runtime symlinks from /var/usrlocal/qualys/cloud-agent -> /usr/local/qualys/cloud-agent
-echo "Files will be placed in /usr/local/qualys/cloud-agent (immutable location)"
-echo "Runtime access via tmpfiles.d symlink: /var/usrlocal/qualys/cloud-agent -> /usr/local/qualys/cloud-agent"
+# We will place files in /usr/libexec during build (immutable, not symlinked to /var)
+# Then use tmpfiles.d to create runtime symlinks from /var/opt/qualys/cloud-agent -> /usr/libexec/qualys/cloud-agent
+echo "Files will be placed in /usr/libexec/qualys/cloud-agent (immutable location)"
+echo "Runtime access via tmpfiles.d symlink: /var/opt/qualys/cloud-agent -> /usr/libexec/qualys/cloud-agent"
 
-# Also create the traditional /usr/local structure for compatibility
-echo "Creating /usr/local structure for compatibility..."
-if [ -L "/usr/local" ]; then
-    echo "/usr/local is a symlink pointing to: $(readlink /usr/local)"
-    # Work with the symlink but don't rely on it for persistence
-    USRLOCAL_TARGET=$(readlink -f /usr/local)
-    echo "Resolved absolute path: $USRLOCAL_TARGET"
-    mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/bin"
-    mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/data"
-    mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/data/manifests"
-    mkdir -p "${USRLOCAL_TARGET}/qualys/cloud-agent/lib"
-else
-    echo "/usr/local is a directory or doesn't exist"
-    mkdir -p /usr/local/qualys/cloud-agent/bin
-    mkdir -p /usr/local/qualys/cloud-agent/data
-    mkdir -p /usr/local/qualys/cloud-agent/data/manifests
-    mkdir -p /usr/local/qualys/cloud-agent/lib
-fi
+# Create immutable target structure under /usr/libexec (Bluefin-style)
+echo "Creating /usr/libexec structure for Qualys Cloud Agent..."
+mkdir -p /usr/libexec/qualys/cloud-agent/bin
+mkdir -p /usr/libexec/qualys/cloud-agent/data
+mkdir -p /usr/libexec/qualys/cloud-agent/data/manifests
+mkdir -p /usr/libexec/qualys/cloud-agent/lib
 
 # Create other necessary directories
 mkdir -p /etc/qualys/cloud-agent
@@ -115,42 +103,40 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     find . -name "qualys-cloud-agent.sh" -exec ls -la {} \; 2>/dev/null || echo "qualys-cloud-agent.sh not found in extraction"
     ls -la usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "usr/local/qualys/cloud-agent/bin/ not found"
 
-    # BOOTC STRATEGY: Copy files directly to immutable /usr/local location
-    # This is the correct approach for bootc - files in /usr/local are part of the immutable container image
-    echo "Copying extracted files to immutable location (/usr/local)..."
+    # BOOTC STRATEGY: Copy files directly to immutable /usr/libexec location (not symlinked to /var)
+    # Files in /usr/libexec are part of the immutable container image even when /usr/local is a symlink
+    echo "Copying extracted files to immutable location (/usr/libexec)..."
     if [ -d "usr/local/qualys/cloud-agent" ]; then
-        echo "Copying usr/local/qualys/cloud-agent/* to /usr/local/qualys/cloud-agent/"
+        echo "Copying usr/local/qualys/cloud-agent/* to /usr/libexec/qualys/cloud-agent/"
         # Ensure target directory exists
-        mkdir -p /usr/local/qualys/cloud-agent
-        cp -r usr/local/qualys/cloud-agent/* /usr/local/qualys/cloud-agent/ 2>/dev/null || true
+        mkdir -p /usr/libexec/qualys/cloud-agent
+        cp -r usr/local/qualys/cloud-agent/* /usr/libexec/qualys/cloud-agent/ 2>/dev/null || true
 
         # Verify the copy operation worked
         echo "Verifying files were copied to immutable location..."
-        if [ -d "/usr/local/qualys/cloud-agent/bin" ]; then
-            echo "✓ /usr/local/qualys/cloud-agent/bin directory exists"
-            echo "Files in /usr/local/qualys/cloud-agent/bin/:"
-            ls -la /usr/local/qualys/cloud-agent/bin/ | head -10
-            echo "Total files copied: $(ls /usr/local/qualys/cloud-agent/bin/ | wc -l)"
+        if [ -d "/usr/libexec/qualys/cloud-agent/bin" ]; then
+            echo "✓ /usr/libexec/qualys/cloud-agent/bin directory exists"
+            echo "Files in /usr/libexec/qualys/cloud-agent/bin/:"
+            ls -la /usr/libexec/qualys/cloud-agent/bin/ | head -10
+            echo "Total files copied: $(ls /usr/libexec/qualys/cloud-agent/bin/ | wc -l)"
         else
-            echo "✗ ERROR: /usr/local/qualys/cloud-agent/bin directory not found after copy!"
+            echo "✗ ERROR: /usr/libexec/qualys/cloud-agent/bin directory not found after copy!"
         fi
 
-        if [ -f "/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+        if [ -f "/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
             echo "✓ Key file qualys-cloud-agent.sh found in immutable location"
         else
             echo "✗ ERROR: qualys-cloud-agent.sh not found in immutable location!"
         fi
     fi
 
-    # Files are already copied to /usr/local above - this is the immutable location
-    echo "Files successfully placed in immutable location: /usr/local/qualys/cloud-agent"
-    echo "Runtime access will be provided via tmpfiles.d symlink to /var/usrlocal/qualys/cloud-agent"
+    # Files are already copied to /usr/libexec above - this is the immutable location
+    echo "Files successfully placed in immutable location: /usr/libexec/qualys/cloud-agent"
+    echo "Runtime access will be provided via tmpfiles.d symlink to /var/opt/qualys/cloud-agent"
 
-    # Handle var/usrlocal if it exists in the RPM
-    if [ -d "var/usrlocal" ]; then
-        echo "Copying var/usrlocal contents to persistent and compatibility locations..."
-        cp -r var/usrlocal/* /var/opt/ 2>/dev/null || true
-        cp -r var/usrlocal/* "$COPY_TARGET/" 2>/dev/null || true
+    # Ignore any var/* content from the RPM to keep /var clean in the image (bootc best practice)
+    if [ -d "var" ]; then
+        echo "Skipping RPM 'var/*' payload; corresponding runtime dirs will be created via tmpfiles.d"
     fi
 
     # Copy etc files
@@ -167,17 +153,17 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     echo "=== VERIFYING FILE COPY RESULTS ==="
 
     # Check immutable location (/usr/local) - this is where files should be
-    echo "Checking immutable location /usr/local/qualys/cloud-agent/bin/:"
-    if [ -d "/usr/local/qualys/cloud-agent/bin" ]; then
-        ls -la /usr/local/qualys/cloud-agent/bin/ | head -10
-        echo "Total files in immutable location: $(ls /usr/local/qualys/cloud-agent/bin/ | wc -l)"
-        ls -la /usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null && echo "✓ qualys-cloud-agent.sh found in immutable location"
+    echo "Checking immutable location /usr/libexec/qualys/cloud-agent/bin/:"
+    if [ -d "/usr/libexec/qualys/cloud-agent/bin" ]; then
+        ls -la /usr/libexec/qualys/cloud-agent/bin/ | head -10
+        echo "Total files in immutable location: $(ls /usr/libexec/qualys/cloud-agent/bin/ | wc -l)"
+        ls -la /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null && echo "✓ qualys-cloud-agent.sh found in immutable location"
     else
-        echo "✗ ERROR: /usr/local/qualys/cloud-agent/bin/ not found!"
+        echo "✗ ERROR: /usr/libexec/qualys/cloud-agent/bin/ not found!"
     fi
 
     # Set proper permissions on immutable location
-    chmod +x /usr/local/qualys/cloud-agent/bin/* 2>/dev/null || true
+    chmod +x /usr/libexec/qualys/cloud-agent/bin/* 2>/dev/null || true
 
     if [ -L "/usr/local" ]; then
         USRLOCAL_TARGET=$(readlink -f /usr/local)
@@ -195,16 +181,16 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     # Verify the Qualys agent script exists and is executable
     echo "=== FINAL VERIFICATION ==="
 
-    # For immutable OS, verify files are accessible via /usr/local (the persistent path)
-    QUALYS_BIN_PATH="/usr/local/qualys/cloud-agent/bin"
-    QUALYS_SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
-    echo "Checking for Qualys agent script at: $QUALYS_SCRIPT_PATH (via /usr/local)"
+    # For immutable OS, verify files are accessible via /usr/libexec (the persistent path)
+    QUALYS_BIN_PATH="/usr/libexec/qualys/cloud-agent/bin"
+    QUALYS_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+    echo "Checking for Qualys agent script at: $QUALYS_SCRIPT_PATH (via /usr/libexec)"
 
-    # Debug: Show directory structure via /usr/local
-    echo "Directory structure under qualys installation (via /usr/local):"
-    find /usr/local/qualys/ -type f -name "*qualys*" 2>/dev/null || echo "No qualys files found via /usr/local"
+    # Debug: Show directory structure via /usr/libexec
+    echo "Directory structure under qualys installation (via /usr/libexec):"
+    find /usr/libexec/qualys/ -type f -name "*qualys*" 2>/dev/null || echo "No qualys files found via /usr/libexec"
 
-    # Also check via resolved path if it's a symlink
+    # Also check via resolved /usr/local symlink target
     if [ -L "/usr/local" ]; then
         USRLOCAL_TARGET=$(readlink -f /usr/local)
         echo "Also checking via resolved symlink target: $USRLOCAL_TARGET"
@@ -233,7 +219,7 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
         echo "Error: Qualys agent script not found after installation"
         echo "Expected location: $QUALYS_SCRIPT_PATH"
 
-        # If symlink, also check resolved path
+        # If symlink, also check resolved /usr/local target
         if [ -L "/usr/local" ]; then
             USRLOCAL_TARGET=$(readlink -f /usr/local)
             RESOLVED_SCRIPT_PATH="$USRLOCAL_TARGET/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
@@ -256,36 +242,16 @@ else
     exit 1
 fi
 
-# Ensure tmpfiles.d directory exists
+# Install tmpfiles.d from system_files (Bluefin-style layering)
 mkdir -p /usr/lib/tmpfiles.d/
-
-# Note: Epson driver tmpfiles.d not needed - rpm-ostree manages all files automatically
-
-cat | tee /usr/lib/tmpfiles.d/qualys.conf <<EOF
-# Tmpfiles for Qualys Cloud Agent
-# Runtime directories and symlinks for bootc immutable OS compatibility
-d /var/log/qualys 0755 root root -
-d /var/lib/qualys 0755 root root -
-d /var/lib/qualys/cloud-agent 0755 root root -
-d /var/cache/qualys 0755 root root -
-d /run/qualys 0755 root root -
-
-# Create /var/usrlocal directory structure
-d /var/usrlocal 0755 root root -
-d /var/usrlocal/qualys 0755 root root -
-
-# Also create /var/opt path for legacy/compatibility expectations
-d /var/opt 0755 root root -
-d /var/opt/qualys 0755 root root -
-
-# Create symlinks from runtime paths to immutable /usr/local/qualys location
-# This ensures systemd services can access files at expected runtime paths
-L /var/usrlocal/qualys/cloud-agent - - - - /usr/local/qualys/cloud-agent
-L /var/opt/qualys/cloud-agent - - - - /usr/local/qualys/cloud-agent
-
-# Note: Individual library symlinks are not needed since we're using a directory symlink
-# The symlinks above expose all files and subdirectories at the expected runtime paths
-EOF
+if [ -f "/ctx/system_files/usr/lib/tmpfiles.d/qualys.conf" ]; then
+    install -D -m 0644 \
+        "/ctx/system_files/usr/lib/tmpfiles.d/qualys.conf" \
+        "/usr/lib/tmpfiles.d/qualys.conf"
+    echo "Installed tmpfiles: /usr/lib/tmpfiles.d/qualys.conf"
+else
+    echo "Warning: /ctx/system_files/usr/lib/tmpfiles.d/qualys.conf not found; tmpfiles not installed"
+fi
 
 
 
@@ -308,13 +274,13 @@ if [ ! -f "/usr/lib/systemd/system/qualys-cloud-agent.service" ] && [ ! -f "/etc
     cat > /usr/lib/systemd/system/qualys-cloud-agent.service << 'EOF'
 [Unit]
 Description=Qualys Cloud Agent
-After=network-online.target
-Wants=network-online.target
-ConditionPathExists=/var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh
+Wants=network-online.target systemd-tmpfiles-setup.service
+After=network-online.target systemd-tmpfiles-setup.service local-fs.target
+ConditionPathExists=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh
 
 [Service]
 Type=forking
-ExecStartPre=/bin/bash -c 'test -x /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh || exit 203'
+ExecStartPre=/bin/bash -c 'test -x /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh || exit 203'
 ExecStartPre=/bin/sleep 5
 ExecStart=/bin/bash /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
 ExecStop=/bin/bash /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
@@ -370,8 +336,8 @@ fi
 # Create first-boot activation script for post-deployment use
 echo "Creating Qualys Cloud Agent first-boot activation script..."
 
-# For immutable OS, always use /usr/local path (persistent location)
-SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
+# For immutable OS, place activation script under /usr/libexec (immutable)
+SCRIPT_PATH="/usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
 echo "Creating activation script at: $SCRIPT_PATH"
 
 cat > "$SCRIPT_PATH" << 'EOF'
@@ -381,7 +347,7 @@ cat > "$SCRIPT_PATH" << 'EOF'
 
 ACTIVATION_FLAG="/var/lib/qualys/cloud-agent/.activated"
 ACTIVATION_CONFIG="/etc/qualys/cloud-agent/activation.conf"
-AGENT_SCRIPT="/var/usrlocal/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+AGENT_SCRIPT="/var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 
 # Create state directory
 mkdir -p /var/lib/qualys/cloud-agent
@@ -444,12 +410,12 @@ fi
 EOF
 
 # Set permissions for the activation script
-chmod +x /usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+chmod +x /usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
 echo "First-boot activation script created and made executable"
 
 # Verify Qualys agent installation without attempting activation
-# Use /usr/local path (persistent location in immutable OS)
-QUALYS_SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+# Use /usr/libexec path (immutable location in bootc images)
+QUALYS_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 
 if [ -x "$QUALYS_SCRIPT_PATH" ]; then
     echo "✓ Qualys Cloud Agent installation verified successfully"
@@ -498,9 +464,9 @@ echo "Created systemd service override for Qualys Cloud Agent"
 echo "Performing final Qualys Cloud Agent validation..."
 echo ""
 echo "=== QUALYS CLOUD AGENT INSTALLATION SUMMARY ==="
-# Use /usr/local paths for final validation (persistent location in immutable OS)
-QUALYS_SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
-ACTIVATION_SCRIPT_PATH="/usr/local/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
+# Use /usr/libexec paths for final validation (immutable location in bootc)
+QUALYS_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+ACTIVATION_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
 
 if [ -f "$QUALYS_SCRIPT_PATH" ]; then
     echo "✓ Qualys agent script installed successfully at $QUALYS_SCRIPT_PATH"
@@ -701,23 +667,40 @@ echo "NetworkManager VPN configuration completed"
 ### Configure Additional System Flatpaks for Post-Deployment Installation
 echo "Configuring additional system Flatpaks for post-deployment installation..."
 
-# Copy the flatpaks list to the system for later use with ujust install-system-flatpaks
+# Copy the flatpaks list to the system and merge it with Bluefin's list used by 'ujust install-system-flatpaks'
 if [ -f "/ctx/flatpaks/additional-flatpaks.list" ]; then
     echo "Installing additional flatpaks list for post-deployment installation..."
 
-    # Create the directory for flatpak configuration in bootc-compliant location
-    # Use /etc/flatpak instead of /usr/etc to avoid bootc container lint failures
+    # Bootc-compliant location for our own list (kept for visibility/debugging)
     mkdir -p /etc/flatpak
-
-    # Copy the additional flatpaks list to the system in the bootc-compliant location
     cp /ctx/flatpaks/additional-flatpaks.list /etc/flatpak/additional-flatpaks.list
     chmod 644 /etc/flatpak/additional-flatpaks.list
 
-    echo "Additional flatpaks list installed to /etc/flatpak/additional-flatpaks.list"
+    # The ujust recipe reads /etc/ublue-os/system-flatpaks.list by default.
+    # Merge our additional entries into that list so both Bluefin and our extras install.
+    mkdir -p /etc/ublue-os
+
+    # Filter additional list to valid entries (ignore blanks/comments)
+    awk 'NF && $0 !~ /^[[:space:]]*#/' /etc/flatpak/additional-flatpaks.list > /tmp/additional-flatpaks.filtered || true
+
+    if [ -s /etc/ublue-os/system-flatpaks.list ]; then
+        echo "Merging additional entries into /etc/ublue-os/system-flatpaks.list (deduping)..."
+        awk 'NF && $0 !~ /^[[:space:]]*#/' /etc/ublue-os/system-flatpaks.list > /tmp/system-flatpaks.current
+        cat /tmp/system-flatpaks.current /tmp/additional-flatpaks.filtered \
+          | awk '!seen[$0]++' \
+          > /etc/ublue-os/system-flatpaks.list.new
+        mv /etc/ublue-os/system-flatpaks.list.new /etc/ublue-os/system-flatpaks.list
+        chmod 644 /etc/ublue-os/system-flatpaks.list
+    else
+        echo "No existing /etc/ublue-os/system-flatpaks.list found; creating it from Bluefin may happen at runtime. Shipping our list now."
+        cp /tmp/additional-flatpaks.filtered /etc/ublue-os/system-flatpaks.list
+        chmod 644 /etc/ublue-os/system-flatpaks.list
+    fi
+
     echo "Users can install these flatpaks after deployment using: ujust install-system-flatpaks"
 
     # Log which flatpaks are configured for installation
-    echo "Configured flatpaks for post-deployment installation:"
+    echo "Configured extra flatpaks for post-deployment installation:"
     while IFS= read -r flatpak_id || [ -n "$flatpak_id" ]; do
         # Skip empty lines and comments
         if [[ -n "$flatpak_id" && ! "$flatpak_id" =~ ^[[:space:]]*# ]]; then
@@ -727,6 +710,42 @@ if [ -f "/ctx/flatpaks/additional-flatpaks.list" ]; then
 else
     echo "No additional flatpaks list found, skipping flatpak configuration"
 fi
+
+# Optionally merge DX additional flatpaks into Bluefin's DX list
+if [ -f "/ctx/flatpaks/additional-flatpaks-dx.list" ]; then
+    echo "Installing additional DX flatpaks list for post-deployment installation..."
+
+    # Keep a copy for visibility/debugging
+    mkdir -p /etc/flatpak
+    cp /ctx/flatpaks/additional-flatpaks-dx.list /etc/flatpak/additional-flatpaks-dx.list
+    chmod 644 /etc/flatpak/additional-flatpaks-dx.list
+
+    # Merge into the DX list that ujust can use when ADD_DEVMODE=1
+    mkdir -p /etc/ublue-os
+    awk 'NF && $0 !~ /^[[:space:]]*#/' /etc/flatpak/additional-flatpaks-dx.list > /tmp/additional-flatpaks-dx.filtered || true
+
+    if [ -s /etc/ublue-os/system-flatpaks-dx.list ]; then
+        echo "Merging additional entries into /etc/ublue-os/system-flatpaks-dx.list (deduping)..."
+        awk 'NF && $0 !~ /^[[:space:]]*#/' /etc/ublue-os/system-flatpaks-dx.list > /tmp/system-flatpaks-dx.current
+        cat /tmp/system-flatpaks-dx.current /tmp/additional-flatpaks-dx.filtered \
+          | awk '!seen[$0]++' \
+          > /etc/ublue-os/system-flatpaks-dx.list.new
+        mv /etc/ublue-os/system-flatpaks-dx.list.new /etc/ublue-os/system-flatpaks-dx.list
+        chmod 644 /etc/ublue-os/system-flatpaks-dx.list
+    else
+        echo "No existing /etc/ublue-os/system-flatpaks-dx.list found; shipping our DX list now."
+        cp /tmp/additional-flatpaks-dx.filtered /etc/ublue-os/system-flatpaks-dx.list
+        chmod 644 /etc/ublue-os/system-flatpaks-dx.list
+    fi
+
+    echo "Configured extra DX flatpaks for post-deployment installation:"
+    while IFS= read -r flatpak_id || [ -n "$flatpak_id" ]; do
+        if [[ -n "$flatpak_id" && ! "$flatpak_id" =~ ^[[:space:]]*# ]]; then
+            echo "  - $flatpak_id"
+        fi
+    done < "/ctx/flatpaks/additional-flatpaks-dx.list"
+fi
+
 
 echo "Flatpak configuration completed"
 

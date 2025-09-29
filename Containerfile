@@ -3,6 +3,7 @@ FROM scratch AS ctx
 COPY build_files /
 COPY flatpaks /flatpaks
 COPY logos /logos
+COPY system_files /system_files
 
 # Base Image
 FROM ghcr.io/ublue-os/bluefin-dx:stable
