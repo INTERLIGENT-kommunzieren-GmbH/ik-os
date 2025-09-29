@@ -436,18 +436,20 @@ Wants=network-online.target
 
 [Service]
 # Verify executable exists before attempting to start
-ExecStartPre=/bin/bash -c 'if [ ! -f /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh ]; then echo "ERROR: Qualys agent script not found"; exit 203; fi'
+ExecStartPre=/bin/bash -c 'if [ ! -f /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent ]; then echo "ERROR: Qualys agent binary not found"; exit 203; fi'
 # Perform first-boot activation if needed (this will be skipped if already activated)
 ExecStartPre=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
 # Add a delay to ensure system is fully ready after activation
 ExecStartPre=/bin/sleep 10
-# Use explicit bash interpreter to avoid exec issues
+# Run the agent binary directly (not the script with start/stop commands)
 ExecStart=
-ExecStart=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh start
+ExecStart=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
+# The agent doesn't support stop commands, let systemd handle termination
 ExecStop=
-ExecStop=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh stop
+# No reload support
 ExecReload=
-ExecReload=/bin/bash /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh restart
+# Change service type to simple since we're running the binary directly
+Type=simple
 # Restart on failure with exponential backoff
 RestartSec=30
 StartLimitBurst=5
@@ -456,6 +458,9 @@ StartLimitIntervalSec=300
 WorkingDirectory=/usr/libexec/qualys/cloud-agent
 # Ensure proper environment
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+# Run as root (required for system scanning)
+User=root
+Group=root
 EOF
 
 echo "Created systemd service override for Qualys Cloud Agent"
