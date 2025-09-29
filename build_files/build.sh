@@ -619,7 +619,6 @@ proto-tcp=no
 dev=tun
 dev-type=tun
 cipher=AES-128-GCM
-verify-x509-name=server_FbS0XcIWNOvPp2bW name
 remote-cert-tls=server
 
 ca=/etc/openvpn/certs/ik-office-ca.pem
