@@ -629,7 +629,7 @@ permissions=
 
 [vpn]
 service-type=org.freedesktop.NetworkManager.openvpn
-connection-type=password
+connection-type=password-auth
 password-flags=4
 username-flags=4
 remote=80.147.28.39
