@@ -102,11 +102,14 @@ chmod +x /sbin/chkconfig
 if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     echo "Installing Qualys Cloud Agent RPM using manual extraction method..."
 
-    # Manual extraction and installation
+    # Extract RPM directly to persistent location
+    echo "Extracting RPM contents directly to persistent locations..."
+
+    # Create a temporary directory for extraction
     TEMP_DIR=$(mktemp -d)
     cd "$TEMP_DIR"
 
-    # Extract the RPM contents
+    # Extract the RPM contents to temporary location first
     echo "Extracting RPM contents..."
     rpm2cpio /ctx/QualysCloudAgent.rpm | cpio -idmv
 
@@ -115,18 +118,36 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     find . -name "qualys-cloud-agent.sh" -exec ls -la {} \; 2>/dev/null || echo "qualys-cloud-agent.sh not found in extraction"
     ls -la usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "usr/local/qualys/cloud-agent/bin/ not found"
 
+    # Copy directly to persistent location (/var/opt/qualys/cloud-agent)
+    echo "Copying extracted files directly to persistent location..."
+    if [ -d "usr/local/qualys/cloud-agent" ]; then
+        echo "Copying usr/local/qualys/cloud-agent/* to /var/opt/qualys/cloud-agent/"
+        cp -r usr/local/qualys/cloud-agent/* /var/opt/qualys/cloud-agent/ 2>/dev/null || true
+
+        # Verify the copy operation worked
+        echo "Verifying files were copied to persistent location..."
+        if [ -d "/var/opt/qualys/cloud-agent/bin" ]; then
+            echo "✓ /var/opt/qualys/cloud-agent/bin directory exists"
+            echo "Files in /var/opt/qualys/cloud-agent/bin/:"
+            ls -la /var/opt/qualys/cloud-agent/bin/ | head -10
+            echo "Total files copied: $(ls /var/opt/qualys/cloud-agent/bin/ | wc -l)"
+        else
+            echo "✗ ERROR: /var/opt/qualys/cloud-agent/bin directory not found after copy!"
+        fi
+
+        if [ -f "/var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh" ]; then
+            echo "✓ Key file qualys-cloud-agent.sh found in persistent location"
+        else
+            echo "✗ ERROR: qualys-cloud-agent.sh not found in persistent location!"
+        fi
+    fi
+
     # Copy files to their destinations
     # BOOTC IMMUTABLE OS STRATEGY: Copy to persistent locations that survive deployment
 
     echo "=== BOOTC IMMUTABLE OS FILE PLACEMENT STRATEGY ==="
-    echo "Primary target: /var/opt/qualys (persistent across bootc deployments)"
+    echo "Primary target: /var/opt/qualys/cloud-agent (persistent across bootc deployments) - ALREADY DONE ABOVE"
     echo "Secondary target: /usr/local (for compatibility)"
-
-    # Copy to persistent location first (/var/opt)
-    if [ -d "usr/local" ]; then
-        echo "Copying usr/local contents to persistent location /var/opt/qualys..."
-        cp -r usr/local/qualys/* /var/opt/qualys/ 2>/dev/null || true
-    fi
 
     # Also copy to /usr/local for compatibility (but don't rely on this for persistence)
     if [ -L "/usr/local" ]; then
@@ -166,6 +187,12 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
     echo "Checking persistent location /var/opt/qualys/cloud-agent/bin/:"
     ls -la /var/opt/qualys/cloud-agent/bin/ 2>/dev/null || echo "/var/opt/qualys/cloud-agent/bin/ not found"
     ls -la /var/opt/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null || echo "qualys-cloud-agent.sh not found in /var/opt"
+
+    # Debug: Check if the source directory structure exists
+    echo "Debug: Source directory structure:"
+    find usr/local -name "qualys*" -type d 2>/dev/null || echo "No qualys directories found in usr/local"
+    echo "Debug: Files in source usr/local/qualys/cloud-agent/bin/:"
+    ls -la usr/local/qualys/cloud-agent/bin/ 2>/dev/null || echo "Source bin directory not found"
 
     # Check compatibility location (/usr/local)
     echo "Checking compatibility location /usr/local/qualys/cloud-agent/bin/:"
