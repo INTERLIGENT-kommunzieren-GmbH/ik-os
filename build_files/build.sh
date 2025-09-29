@@ -266,12 +266,13 @@ fi
 
 #systemctl enable podman.socket
 
-# Install Qualys Cloud Agent Wrapper Script
+# Install Qualys Cloud Agent Wrapper Script (Bluefin approach)
 echo "Installing Qualys Cloud Agent wrapper script..."
 if [ -f "/ctx/qualys-agent-wrapper.sh" ]; then
-    cp /ctx/qualys-agent-wrapper.sh /usr/local/bin/qualys-agent-wrapper.sh
-    chmod 755 /usr/local/bin/qualys-agent-wrapper.sh
-    echo "✓ Qualys wrapper script installed to /usr/local/bin/qualys-agent-wrapper.sh"
+    # Use /usr/bin following Bluefin approach for custom scripts
+    cp /ctx/qualys-agent-wrapper.sh /usr/bin/qualys-agent-wrapper.sh
+    chmod 755 /usr/bin/qualys-agent-wrapper.sh
+    echo "✓ Qualys wrapper script installed to /usr/bin/qualys-agent-wrapper.sh"
 else
     echo "✗ ERROR: Qualys wrapper script not found at /ctx/qualys-agent-wrapper.sh"
     exit 1
@@ -490,7 +491,7 @@ else
     exit 1
 fi
 
-if [ -f "/usr/local/bin/qualys-agent-wrapper.sh" ]; then
+if [ -f "/usr/bin/qualys-agent-wrapper.sh" ]; then
     echo "✓ Qualys wrapper script installed successfully"
 else
     echo "✗ ERROR: Qualys wrapper script not found"
@@ -511,14 +512,14 @@ echo ""
 echo "Deployment configuration:"
 echo "1. Qualys agent will run via wrapper script that handles environment setup"
 echo "2. Periodic scans are scheduled via systemd timer (every 6 hours with randomization)"
-echo "3. Manual execution available via: /usr/local/bin/qualys-agent-wrapper.sh"
+echo "3. Manual execution available via: /usr/bin/qualys-agent-wrapper.sh"
 echo "4. Wrapper handles activation, environment setup, and error recovery"
 echo "5. Logs are written to /var/log/qualys/qualys-wrapper.log"
 echo ""
 echo "Service management:"
 echo "- Timer-based (recommended): systemctl {start|stop|status} qualys-agent-scan.timer"
 echo "- Continuous service: systemctl {enable|start|stop} qualys-agent-wrapper.service"
-echo "- Manual execution: /usr/local/bin/qualys-agent-wrapper.sh {run|stop|status|test}"
+echo "- Manual execution: /usr/bin/qualys-agent-wrapper.sh {run|stop|status|test}"
 echo "================================================"
 
 # Clean up compatibility workarounds

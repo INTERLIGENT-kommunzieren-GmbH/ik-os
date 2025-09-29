@@ -7,7 +7,7 @@ ConditionPathExists=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/qualys-agent-wrapper.sh run
+ExecStart=/usr/bin/qualys-agent-wrapper.sh run
 User=root
 Group=root
 WorkingDirectory=/usr/libexec/qualys/cloud-agent
