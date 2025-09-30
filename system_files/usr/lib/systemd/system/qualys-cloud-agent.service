@@ -1,7 +1,7 @@
 [Unit]
 Description=Qualys Cloud Agent
 Documentation=https://www.qualys.com/
-After=network-online.target
+After=network-online.target systemd-tmpfiles-setup.service
 Wants=network-online.target
 ConditionPathExists=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
 
@@ -15,15 +15,14 @@ EnvironmentFile=-/etc/environment
 EnvironmentFile=-/etc/default/qualys-cloud-agent
 EnvironmentFile=-/etc/sysconfig/qualys-cloud-agent
 
-# First-boot setup and activation (idempotent - skips if already done)
-# This copies the agent from immutable /usr to writable /var and activates it
+# First-boot activation (idempotent - skips if already activated)
 # Use '-' prefix to allow service to continue even if activation fails
 # Timeout after 5 minutes to prevent hanging
 ExecStartPre=-/bin/bash -c 'timeout 300 /usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh || true'
 
-# Start the Qualys Cloud Agent from writable location
-# The agent needs to write Config.db and other files, so it runs from /var/opt
-ExecStart=/var/opt/qualys/cloud-agent/bin/qualys-cloud-agent
+# Start the Qualys Cloud Agent
+# Config.db writes are redirected to /var via symlink created by tmpfiles.d
+ExecStart=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
 
 # Restart configuration
 # Only restart on actual failure, not on clean exit
@@ -32,8 +31,8 @@ RestartSec=60s
 TimeoutStopSec=90s
 TimeoutStartSec=120s
 
-# Working directory (writable location for Config.db and other runtime files)
-WorkingDirectory=/var/opt/qualys/cloud-agent
+# Working directory
+WorkingDirectory=/usr/libexec/qualys/cloud-agent
 
 # Environment
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
