@@ -1,0 +1,48 @@
+[Unit]
+Description=Qualys Cloud Agent
+Documentation=https://www.qualys.com/
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/environment
+EnvironmentFile=-/etc/default/qualys-cloud-agent
+EnvironmentFile=-/etc/sysconfig/qualys-cloud-agent
+
+# First-boot activation (idempotent - skips if already activated)
+# Use '-' prefix to allow service to continue even if activation fails
+ExecStartPre=-/usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+
+# Start the Qualys Cloud Agent
+ExecStart=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
+
+# Restart configuration
+Restart=on-failure
+RestartSec=60s
+TimeoutStopSec=90s
+TimeoutStartSec=300s
+
+# Working directory
+WorkingDirectory=/usr/libexec/qualys/cloud-agent
+
+# Environment
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=HOME=/root
+
+# Security settings (relaxed for Qualys agent requirements)
+NoNewPrivileges=false
+PrivateTmp=false
+ProtectSystem=false
+ProtectHome=false
+
+# Allow access to necessary paths
+ReadWritePaths=/var/log/qualys
+ReadWritePaths=/var/lib/qualys
+ReadWritePaths=/var/run/qualys
+ReadWritePaths=/etc/qualys
+
+[Install]
+WantedBy=multi-user.target
+
