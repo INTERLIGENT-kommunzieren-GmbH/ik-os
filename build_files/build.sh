@@ -128,6 +128,23 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
         else
             echo "✗ ERROR: qualys-cloud-agent.sh not found in immutable location!"
         fi
+
+        # CRITICAL FIX FOR IMMUTABLE OS: Disable chmod/chown operations in qualys-cloud-agent.sh
+        # The Qualys activation script tries to chmod/chown files in /usr/libexec which is read-only after deployment
+        # We comment out the entire permission-setting section (lines 145-244 based on our earlier inspection)
+        echo "Patching qualys-cloud-agent.sh for immutable OS compatibility..."
+        QUALYS_SCRIPT="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+
+        # Comment out all chmod, chown, and chgrp commands
+        # These fail on immutable filesystems and are not needed since permissions are set during build
+        sed -i '/^[[:space:]]*chmod /s/^/# IMMUTABLE-OS-SKIP: /' "$QUALYS_SCRIPT"
+        sed -i '/^[[:space:]]*chown /s/^/# IMMUTABLE-OS-SKIP: /' "$QUALYS_SCRIPT"
+        sed -i '/^[[:space:]]*chgrp /s/^/# IMMUTABLE-OS-SKIP: /' "$QUALYS_SCRIPT"
+        sed -i '/^[[:space:]]*find.*-exec chmod/s/^/# IMMUTABLE-OS-SKIP: /' "$QUALYS_SCRIPT"
+        sed -i '/^[[:space:]]*find.*-exec chown/s/^/# IMMUTABLE-OS-SKIP: /' "$QUALYS_SCRIPT"
+        sed -i '/^[[:space:]]*find.*-exec chgrp/s/^/# IMMUTABLE-OS-SKIP: /' "$QUALYS_SCRIPT"
+
+        echo "✓ Qualys activation script patched for immutable OS (chmod/chown operations disabled)"
     fi
 
     # Files are already copied to /usr/libexec above - this is the immutable location

@@ -5,6 +5,10 @@ After=network-online.target
 Wants=network-online.target
 ConditionPathExists=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
 
+# Restart limits to prevent rapid restart loops
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
 [Service]
 Type=simple
 EnvironmentFile=-/etc/environment
@@ -13,16 +17,18 @@ EnvironmentFile=-/etc/sysconfig/qualys-cloud-agent
 
 # First-boot activation (idempotent - skips if already activated)
 # Use '-' prefix to allow service to continue even if activation fails
-ExecStartPre=-/usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh
+# Timeout after 5 minutes to prevent hanging
+ExecStartPre=-/bin/bash -c 'timeout 300 /usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh || true'
 
 # Start the Qualys Cloud Agent
 ExecStart=/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent
 
 # Restart configuration
+# Only restart on actual failure, not on clean exit
 Restart=on-failure
 RestartSec=60s
 TimeoutStopSec=90s
-TimeoutStartSec=300s
+TimeoutStartSec=120s
 
 # Working directory
 WorkingDirectory=/usr/libexec/qualys/cloud-agent
