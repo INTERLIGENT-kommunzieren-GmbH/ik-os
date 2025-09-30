@@ -129,20 +129,16 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
             echo "✗ ERROR: qualys-cloud-agent.sh not found in immutable location!"
         fi
 
-        # CRITICAL: Store pristine agent copy and symlink to /var for runtime use
-        # The agent needs to modify permissions and write files during activation and runtime
-        # Instead of patching scripts, we use the "Bluefin way": pristine copy in /usr, symlink to /var
-        echo "Storing pristine agent copy and creating symlink to /var..."
+        # CRITICAL: Patch activation script to work on immutable OS
+        # Replace ALL chmod/chown/chgrp commands with ':' (no-op)
+        echo "Patching qualys-cloud-agent.sh for immutable OS..."
+        QUALYS_SCRIPT="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 
-        # Move the agent directory to a pristine location
-        mv /usr/libexec/qualys/cloud-agent /usr/libexec/qualys/cloud-agent-pristine
+        # Replace any line containing chmod, chown, or chgrp with a colon (bash no-op)
+        # This catches all variations: direct commands, find -exec, xargs, etc.
+        sed -i '/chmod\|chown\|chgrp/ s/^[[:space:]]*.*$/\t: # IMMUTABLE-OS-SKIP/' "$QUALYS_SCRIPT"
 
-        # Create symlink from expected location to /var (will be populated at boot by tmpfiles.d)
-        ln -sf /var/opt/qualys/cloud-agent /usr/libexec/qualys/cloud-agent
-
-        echo "✓ Pristine agent stored at: /usr/libexec/qualys/cloud-agent-pristine"
-        echo "✓ Symlink created: /usr/libexec/qualys/cloud-agent -> /var/opt/qualys/cloud-agent"
-        echo "Agent will run from writable location with full chmod/chown support"
+        echo "✓ Activation script patched - all permission commands disabled"
     fi
 
     # Ignore any var/* content from the RPM to keep /var clean in the image (bootc best practice)
@@ -160,29 +156,21 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
         find usr -mindepth 1 -maxdepth 1 ! -name "local" -exec cp -r {} /usr/ \; 2>/dev/null || true
     fi
 
-    # Verify pristine agent copy was stored correctly
-    echo "=== VERIFYING PRISTINE AGENT COPY ==="
+    # Verify agent was installed correctly
+    echo "=== VERIFYING AGENT INSTALLATION ==="
 
-    # Check pristine location
-    echo "Checking pristine agent at /usr/libexec/qualys/cloud-agent-pristine/bin/:"
-    if [ -d "/usr/libexec/qualys/cloud-agent-pristine/bin" ]; then
-        ls -la /usr/libexec/qualys/cloud-agent-pristine/bin/ | head -10
-        echo "Total files in pristine copy: $(ls /usr/libexec/qualys/cloud-agent-pristine/bin/ | wc -l)"
-        ls -la /usr/libexec/qualys/cloud-agent-pristine/bin/qualys-cloud-agent.sh 2>/dev/null && echo "✓ qualys-cloud-agent.sh found in pristine copy"
+    # Check agent location
+    echo "Checking agent at /usr/libexec/qualys/cloud-agent/bin/:"
+    if [ -d "/usr/libexec/qualys/cloud-agent/bin" ]; then
+        ls -la /usr/libexec/qualys/cloud-agent/bin/ | head -10
+        echo "Total files: $(ls /usr/libexec/qualys/cloud-agent/bin/ | wc -l)"
+        ls -la /usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh 2>/dev/null && echo "✓ qualys-cloud-agent.sh found"
     else
-        echo "✗ ERROR: /usr/libexec/qualys/cloud-agent-pristine/bin/ not found!"
+        echo "✗ ERROR: /usr/libexec/qualys/cloud-agent/bin/ not found!"
     fi
 
-    # Set proper permissions on pristine copy
-    chmod +x /usr/libexec/qualys/cloud-agent-pristine/bin/* 2>/dev/null || true
-
-    # Verify symlink was created
-    echo "Verifying symlink:"
-    if [ -L "/usr/libexec/qualys/cloud-agent" ]; then
-        echo "✓ Symlink exists: /usr/libexec/qualys/cloud-agent -> $(readlink /usr/libexec/qualys/cloud-agent)"
-    else
-        echo "✗ ERROR: Symlink /usr/libexec/qualys/cloud-agent not found!"
-    fi
+    # Set proper permissions
+    chmod +x /usr/libexec/qualys/cloud-agent/bin/* 2>/dev/null || true
 
     # Cleanup
     cd /
@@ -190,13 +178,12 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
 
     echo "Manual installation completed"
 
-    # Verify the Qualys agent pristine copy exists
+    # Verify the Qualys agent exists
     echo "=== FINAL VERIFICATION ==="
 
-    # Verify pristine copy
-    QUALYS_PRISTINE_PATH="/usr/libexec/qualys/cloud-agent-pristine"
-    QUALYS_SCRIPT_PATH="$QUALYS_PRISTINE_PATH/bin/qualys-cloud-agent.sh"
-    echo "Checking for Qualys agent script in pristine copy: $QUALYS_SCRIPT_PATH"
+    # Verify agent installation
+    QUALYS_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+    echo "Checking for Qualys agent script: $QUALYS_SCRIPT_PATH"
 
     if [ ! -f "$QUALYS_SCRIPT_PATH" ]; then
         echo "Error: Qualys agent script not found after installation"
@@ -306,8 +293,8 @@ fi
 # Create first-boot activation script for post-deployment use
 echo "Creating Qualys Cloud Agent first-boot activation script..."
 
-# Place activation script in pristine location (will be copied to /var by tmpfiles.d)
-SCRIPT_PATH="/usr/libexec/qualys/cloud-agent-pristine/bin/qualys-first-boot-activation.sh"
+# Place activation script in agent bin directory
+SCRIPT_PATH="/usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
 echo "Creating activation script at: $SCRIPT_PATH"
 
 cat > "$SCRIPT_PATH" << 'EOF'
@@ -384,8 +371,7 @@ chmod +x "$SCRIPT_PATH"
 echo "First-boot activation script created and made executable"
 
 # Verify Qualys agent installation without attempting activation
-# Use pristine path (will be copied to /var by tmpfiles.d)
-QUALYS_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent-pristine/bin/qualys-cloud-agent.sh"
+QUALYS_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 
 if [ -x "$QUALYS_SCRIPT_PATH" ]; then
     echo "✓ Qualys Cloud Agent installation verified successfully"
@@ -402,9 +388,8 @@ fi
 echo "Performing final Qualys Cloud Agent validation..."
 echo ""
 echo "=== QUALYS CLOUD AGENT INSTALLATION SUMMARY ==="
-# Use pristine paths for validation (will be copied to /var by tmpfiles.d)
-QUALYS_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent-pristine/bin/qualys-cloud-agent.sh"
-ACTIVATION_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent-pristine/bin/qualys-first-boot-activation.sh"
+QUALYS_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+ACTIVATION_SCRIPT_PATH="/usr/libexec/qualys/cloud-agent/bin/qualys-first-boot-activation.sh"
 
 if [ -f "$QUALYS_SCRIPT_PATH" ]; then
     echo "✓ Qualys agent script installed successfully at $QUALYS_SCRIPT_PATH"
