@@ -348,13 +348,25 @@ cat > "$SCRIPT_PATH" << 'EOF'
 #!/bin/bash
 # Qualys Cloud Agent First-Boot Activation Script
 # This script handles activation on first boot when systemd is available
+# CRITICAL FOR IMMUTABLE OS: Copies agent from immutable /usr to writable /var
 
 ACTIVATION_FLAG="/var/lib/qualys/cloud-agent/.activated"
 ACTIVATION_CONFIG="/etc/qualys/cloud-agent/activation.conf"
-AGENT_SCRIPT="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
+IMMUTABLE_AGENT_DIR="/usr/libexec/qualys/cloud-agent"
+WRITABLE_AGENT_DIR="/var/opt/qualys/cloud-agent"
+AGENT_SCRIPT="$WRITABLE_AGENT_DIR/bin/qualys-cloud-agent.sh"
 
 # Create state directory
 mkdir -p /var/lib/qualys/cloud-agent
+
+# CRITICAL: Copy agent from immutable location to writable location on first run
+# The agent needs to write Config.db and other files, which fails in /usr/libexec (read-only)
+if [ ! -d "$WRITABLE_AGENT_DIR/bin" ]; then
+    echo "First boot: Copying Qualys agent from $IMMUTABLE_AGENT_DIR to $WRITABLE_AGENT_DIR"
+    mkdir -p /var/opt/qualys
+    cp -a "$IMMUTABLE_AGENT_DIR" "$WRITABLE_AGENT_DIR"
+    echo "Agent copied successfully to writable location"
+fi
 
 # Check if already activated
 if [ -f "$ACTIVATION_FLAG" ]; then
