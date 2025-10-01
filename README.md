@@ -120,6 +120,25 @@ sudo bootc switch ghcr.io/<username>/<image_name>
 ```
 This should queue your image for the next reboot, which you can do immediately after the command finishes. You have officially set up your custom image! See the following section for an explanation of the important parts of the template for customization.
 
+## Image Signature Verification
+
+Your custom image is automatically signed during the build process using cosign. The public key (`cosign.pub`) is embedded in the image at `/etc/pki/containers/` to enable automatic signature verification during bootc/ostree operations.
+
+### Verifying Your Image Signature
+
+You can manually verify your image signature using cosign:
+
+```bash
+cosign verify --key cosign.pub ghcr.io/<username>/<image_name>
+```
+
+### How It Works
+
+1. During the GitHub Actions build, your image is signed with the private key stored in the `SIGNING_SECRET` repository secret
+2. The public key is automatically installed in the image at `/etc/pki/containers/ghcr.io-<username>-<image_name>.pub`
+3. When you use `bootc switch` or `bootc upgrade`, the system automatically verifies the image signature using the embedded public key
+4. This ensures that only properly signed images from your repository can be deployed
+
 # Repository Contents
 
 ## Containerfile

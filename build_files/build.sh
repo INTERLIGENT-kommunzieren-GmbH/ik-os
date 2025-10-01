@@ -651,6 +651,33 @@ echo "Note: Users can optionally save credentials in keyring after successful au
 
 echo "NetworkManager VPN configuration completed"
 
+### Install Cosign Public Key for Image Signature Verification
+echo "Installing cosign public key for image signature verification..."
+
+# Create the directory for container signature verification keys
+mkdir -p /etc/pki/containers
+
+# Copy the cosign public key from system_files to the proper location
+# This allows ostree/bootc to verify the image signature
+if [ -f "/ctx/system_files/etc/pki/containers/ghcr.io-interligent-kommunzieren-gmbh-ik-os.pub" ]; then
+    echo "Installing cosign public key for ghcr.io/interligent-kommunzieren-gmbh/ik-os..."
+
+    cp /ctx/system_files/etc/pki/containers/ghcr.io-interligent-kommunzieren-gmbh-ik-os.pub \
+       /etc/pki/containers/ghcr.io-interligent-kommunzieren-gmbh-ik-os.pub
+
+    # Set proper permissions for the public key (readable by all)
+    chmod 644 /etc/pki/containers/ghcr.io-interligent-kommunzieren-gmbh-ik-os.pub
+
+    echo "Cosign public key installed successfully"
+    echo "Location: /etc/pki/containers/ghcr.io-interligent-kommunzieren-gmbh-ik-os.pub"
+    echo "This key will be used to verify image signatures during bootc/ostree operations"
+else
+    echo "Warning: Cosign public key not found in /ctx/system_files/etc/pki/containers/"
+    echo "Image signature verification may not work without this key"
+fi
+
+echo "Cosign public key installation completed"
+
 ### Configure Additional System Flatpaks for Post-Deployment Installation
 echo "Configuring additional system Flatpaks for post-deployment installation..."
 
