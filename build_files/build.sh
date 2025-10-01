@@ -129,16 +129,38 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
             echo "✗ ERROR: qualys-cloud-agent.sh not found in immutable location!"
         fi
 
-        # CRITICAL: Patch activation script to work on immutable OS
-        # Replace ALL chmod/chown/chgrp commands with ':' (no-op)
+        # CRITICAL: Mock chmod/chown/chgrp for immutable OS
+        # Add empty function definitions at the beginning of the script
         echo "Patching qualys-cloud-agent.sh for immutable OS..."
         QUALYS_SCRIPT="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 
-        # Replace any line containing chmod, chown, or chgrp with a colon (bash no-op)
-        # This catches all variations: direct commands, find -exec, xargs, etc.
-        sed -i '/chmod\|chown\|chgrp/ s/^[[:space:]]*.*$/\t: # IMMUTABLE-OS-SKIP/' "$QUALYS_SCRIPT"
+        # Insert mock functions after the shebang line
+        sed -i '2i\
+# IMMUTABLE-OS: Mock permission commands (read-only filesystem)\
+chmod() { :; }\
+chown() { :; }\
+chgrp() { :; }\
+' "$QUALYS_SCRIPT"
 
-        echo "✓ Activation script patched - all permission commands disabled"
+        echo "✓ Activation script patched - chmod/chown/chgrp mocked with empty functions"
+
+        # Create symlinks for writable files/directories to /var
+        echo "Creating symlinks for writable data to /var/lib/qualys/cloud-agent/..."
+
+        # Main database file
+        ln -sf /var/lib/qualys/cloud-agent/Config.db /usr/libexec/qualys/cloud-agent/Config.db
+
+        # Writable directories - remove originals and create symlinks
+        # These directories need to be writable for the agent to store runtime data
+        for dir in cert data cep/results custom-qid/scripts; do
+            if [ -e "/usr/libexec/qualys/cloud-agent/$dir" ]; then
+                rm -rf "/usr/libexec/qualys/cloud-agent/$dir"
+            fi
+            mkdir -p "$(dirname /usr/libexec/qualys/cloud-agent/$dir)"
+            ln -sf "/var/lib/qualys/cloud-agent/$dir" "/usr/libexec/qualys/cloud-agent/$dir"
+        done
+
+        echo "✓ Writable data symlinks created (Config.db, cert, data, cep/results, custom-qid/scripts)"
     fi
 
     # Ignore any var/* content from the RPM to keep /var clean in the image (bootc best practice)
