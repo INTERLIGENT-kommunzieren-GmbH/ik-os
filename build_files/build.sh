@@ -129,20 +129,46 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
             echo "✗ ERROR: qualys-cloud-agent.sh not found in immutable location!"
         fi
 
-        # CRITICAL: Mock chmod/chown/chgrp for immutable OS
-        # Add empty function definitions at the beginning of the script
-        echo "Patching qualys-cloud-agent.sh for immutable OS..."
+        # CRITICAL: Replace activation script with simplified version for immutable OS
+        # The original script does a lot of permission setting which fails on read-only /usr
+        # We create a minimal version that just calls the agent binary with activation parameters
+        echo "Creating simplified activation script for immutable OS..."
         QUALYS_SCRIPT="/usr/libexec/qualys/cloud-agent/bin/qualys-cloud-agent.sh"
 
-        # Insert mock functions after the shebang line
-        sed -i '2i\
-# IMMUTABLE-OS: Mock permission commands (read-only filesystem)\
-chmod() { :; }\
-chown() { :; }\
-chgrp() { :; }\
-' "$QUALYS_SCRIPT"
+        # Backup original and create new simplified version
+        mv "$QUALYS_SCRIPT" "${QUALYS_SCRIPT}.original"
 
-        echo "✓ Activation script patched - chmod/chown/chgrp mocked with empty functions"
+        cat > "$QUALYS_SCRIPT" << 'ACTIVATION_SCRIPT_EOF'
+#!/bin/bash
+# Qualys Cloud Agent Activation Script - Simplified for Immutable OS
+# This version skips all permission-setting operations
+
+# Get installation directory
+INSTALL_ROOT_DATA="$(cd -- "$(dirname -- "$0")" && cd ../../ && pwd -P)"
+INSTALL_MAIN_DIR="${INSTALL_ROOT_DATA}"
+INSTALL_BIN_DIR="${INSTALL_MAIN_DIR}/bin"
+AGENT_BINARY="${INSTALL_BIN_DIR}/qualys-cloud-agent"
+
+# Check if agent binary exists
+if [ ! -x "$AGENT_BINARY" ]; then
+    echo "Error: Qualys Cloud Agent binary not found at $AGENT_BINARY"
+    exit 1
+fi
+
+# Parse command line arguments for activation
+ACTIVATION_ARGS=""
+for arg in "$@"; do
+    ACTIVATION_ARGS="$ACTIVATION_ARGS $arg"
+done
+
+# Run the agent with activation parameters
+echo "Activating Qualys Cloud Agent..."
+exec "$AGENT_BINARY" $ACTIVATION_ARGS
+ACTIVATION_SCRIPT_EOF
+
+        chmod +x "$QUALYS_SCRIPT"
+
+        echo "✓ Activation script replaced with simplified immutable-OS version"
 
         # Create symlinks for writable files/directories to /var
         echo "Creating symlinks for writable data to /var/lib/qualys/cloud-agent/..."
