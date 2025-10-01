@@ -144,14 +144,18 @@ if [ -f "/ctx/QualysCloudAgent.rpm" ]; then
 # This version skips all permission-setting operations
 
 # Get installation directory
-INSTALL_ROOT_DATA="$(cd -- "$(dirname -- "$0")" && cd ../../ && pwd -P)"
-INSTALL_MAIN_DIR="${INSTALL_ROOT_DATA}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "$0")" && pwd -P)"
+INSTALL_ROOT_DATA="$(cd -- "$SCRIPT_DIR/../.." && pwd -P)"
+INSTALL_MAIN_DIR="${INSTALL_ROOT_DATA}/cloud-agent"
 INSTALL_BIN_DIR="${INSTALL_MAIN_DIR}/bin"
 AGENT_BINARY="${INSTALL_BIN_DIR}/qualys-cloud-agent"
 
 # Check if agent binary exists
 if [ ! -x "$AGENT_BINARY" ]; then
     echo "Error: Qualys Cloud Agent binary not found at $AGENT_BINARY"
+    echo "Script dir: $SCRIPT_DIR"
+    echo "Install root: $INSTALL_ROOT_DATA"
+    echo "Install main: $INSTALL_MAIN_DIR"
     exit 1
 fi
 
@@ -178,7 +182,7 @@ ACTIVATION_SCRIPT_EOF
 
         # Writable directories - remove originals and create symlinks
         # These directories need to be writable for the agent to store runtime data
-        for dir in cert data cep/results custom-qid/scripts; do
+        for dir in cert data manifests cep/results custom-qid/scripts; do
             if [ -e "/usr/libexec/qualys/cloud-agent/$dir" ]; then
                 rm -rf "/usr/libexec/qualys/cloud-agent/$dir"
             fi
@@ -186,7 +190,7 @@ ACTIVATION_SCRIPT_EOF
             ln -sf "/var/lib/qualys/cloud-agent/$dir" "/usr/libexec/qualys/cloud-agent/$dir"
         done
 
-        echo "✓ Writable data symlinks created (Config.db, cert, data, cep/results, custom-qid/scripts)"
+        echo "✓ Writable data symlinks created (Config.db, cert, data, manifests, cep/results, custom-qid/scripts)"
     fi
 
     # Ignore any var/* content from the RPM to keep /var clean in the image (bootc best practice)
