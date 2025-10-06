@@ -177,12 +177,29 @@ ACTIVATION_SCRIPT_EOF
         # Create symlinks for writable files/directories to /var
         echo "Creating symlinks for writable data to /var/lib/qualys/cloud-agent/..."
 
-        # Main database file
+        # Database files - symlink Config.db and create a db directory for runtime databases
         ln -sf /var/lib/qualys/cloud-agent/Config.db /usr/libexec/qualys/cloud-agent/Config.db
 
-        # Writable directories - remove originals and create symlinks
-        # These directories need to be writable for the agent to store runtime data
-        for dir in cert data manifests cep/results custom-qid/scripts; do
+        # Create db directory for runtime database files like SnapshotAutoDiscovery.db
+        # We'll create symlinks for common database file patterns
+        for db_file in SnapshotAutoDiscovery.db SnapshotPC.db SnapshotVM.db; do
+            ln -sf "/var/lib/qualys/cloud-agent/$db_file" "/usr/libexec/qualys/cloud-agent/$db_file"
+        done
+
+        # Symlink all module-specific manifest directories
+        # Find all manifest directories and symlink them
+        echo "Symlinking all manifest directories..."
+        for manifest_dir in $(find /usr/libexec/qualys/cloud-agent -name "manifests" -type d); do
+            # Get relative path from agent root
+            rel_path="${manifest_dir#/usr/libexec/qualys/cloud-agent/}"
+            echo "  Symlinking $rel_path"
+            rm -rf "$manifest_dir"
+            mkdir -p "$(dirname $manifest_dir)"
+            ln -sf "/var/lib/qualys/cloud-agent/$rel_path" "$manifest_dir"
+        done
+
+        # Writable data directories
+        for dir in cert data cep/results custom-qid/scripts; do
             if [ -e "/usr/libexec/qualys/cloud-agent/$dir" ]; then
                 rm -rf "/usr/libexec/qualys/cloud-agent/$dir"
             fi
@@ -190,7 +207,7 @@ ACTIVATION_SCRIPT_EOF
             ln -sf "/var/lib/qualys/cloud-agent/$dir" "/usr/libexec/qualys/cloud-agent/$dir"
         done
 
-        echo "✓ Writable data symlinks created (Config.db, cert, data, manifests, cep/results, custom-qid/scripts)"
+        echo "✓ Writable data symlinks created (Config.db, cert, data, all manifests, cep/results, custom-qid/scripts)"
     fi
 
     # Ignore any var/* content from the RPM to keep /var clean in the image (bootc best practice)
