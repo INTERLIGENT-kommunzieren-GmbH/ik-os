@@ -187,9 +187,9 @@ ACTIVATION_SCRIPT_EOF
         done
 
         # Symlink all module-specific manifest directories
-        # Find all manifest directories and symlink them
-        echo "Symlinking all manifest directories..."
-        for manifest_dir in $(find /usr/libexec/qualys/cloud-agent -name "manifests" -type d); do
+        # Find all manifest directories and symlink them (except root manifests which we handle separately)
+        echo "Symlinking module-specific manifest directories..."
+        for manifest_dir in $(find /usr/libexec/qualys/cloud-agent -name "manifests" -type d | grep -v "^/usr/libexec/qualys/cloud-agent/manifests$"); do
             # Get relative path from agent root
             rel_path="${manifest_dir#/usr/libexec/qualys/cloud-agent/}"
             echo "  Symlinking $rel_path"
@@ -197,6 +197,13 @@ ACTIVATION_SCRIPT_EOF
             mkdir -p "$(dirname $manifest_dir)"
             ln -sf "/var/lib/qualys/cloud-agent/$rel_path" "$manifest_dir"
         done
+
+        # Symlink root manifests directory separately
+        echo "Symlinking root manifests directory..."
+        if [ -d "/usr/libexec/qualys/cloud-agent/manifests" ]; then
+            rm -rf "/usr/libexec/qualys/cloud-agent/manifests"
+        fi
+        ln -sf "/var/lib/qualys/cloud-agent/manifests" "/usr/libexec/qualys/cloud-agent/manifests"
 
         # Writable data directories
         for dir in cert data cep/results custom-qid/scripts; do
