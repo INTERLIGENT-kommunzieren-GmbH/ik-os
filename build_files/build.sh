@@ -182,7 +182,7 @@ ACTIVATION_SCRIPT_EOF
 
         # Create db directory for runtime database files like SnapshotAutoDiscovery.db
         # We'll create symlinks for common database file patterns
-        for db_file in SnapshotAutoDiscovery.db SnapshotPC.db SnapshotVM.db; do
+        for db_file in SnapshotAutoDiscovery.db SnapshotPC.db SnapshotVM.db SnapshotInventory.db; do
             ln -sf "/var/lib/qualys/cloud-agent/$db_file" "/usr/libexec/qualys/cloud-agent/$db_file"
         done
 
