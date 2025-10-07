@@ -186,6 +186,12 @@ ACTIVATION_SCRIPT_EOF
             ln -sf "/var/lib/qualys/cloud-agent/$db_file" "/usr/libexec/qualys/cloud-agent/$db_file"
         done
 
+        # Module-specific database files (created at runtime)
+        # These need to be symlinked to writable locations
+        for module_db in cep/cep.db; do
+            ln -sf "/var/lib/qualys/cloud-agent/$module_db" "/usr/libexec/qualys/cloud-agent/$module_db"
+        done
+
         # Symlink all module-specific manifest directories
         # Find all manifest directories and symlink them (except root manifests which we handle separately)
         echo "Symlinking module-specific manifest directories..."
