@@ -204,6 +204,12 @@ ACTIVATION_SCRIPT_EOF
             ln -sf "/var/lib/qualys/cloud-agent/$rel_path" "$manifest_dir"
         done
 
+        # Create correlation directory and symlink its manifests subdirectory
+        # This directory doesn't exist in the RPM, it's created at runtime
+        echo "Creating correlation directory structure..."
+        mkdir -p /usr/libexec/qualys/cloud-agent/correlation
+        ln -sf "/var/lib/qualys/cloud-agent/correlation/manifests" "/usr/libexec/qualys/cloud-agent/correlation/manifests"
+
         # Symlink root manifests directory separately
         echo "Symlinking root manifests directory..."
         if [ -d "/usr/libexec/qualys/cloud-agent/manifests" ]; then
