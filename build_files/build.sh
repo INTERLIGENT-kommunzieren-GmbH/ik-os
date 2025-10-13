@@ -186,6 +186,10 @@ ACTIVATION_SCRIPT_EOF
             ln -sf "/var/lib/qualys/cloud-agent/$db_file" "/usr/libexec/qualys/cloud-agent/$db_file"
         done
 
+
+            # Status database file (created at runtime) should reside in /var
+            ln -sf "/var/lib/qualys/cloud-agent/Status.db" "/usr/libexec/qualys/cloud-agent/Status.db"
+
         # Module-specific database files (created at runtime)
         # These need to be symlinked to writable locations
         for module_db in cep/cep.db; do
