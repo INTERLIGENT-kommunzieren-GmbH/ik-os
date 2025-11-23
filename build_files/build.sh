@@ -21,7 +21,7 @@ dnf5 install -y util-linux
 
 # Check if Epson RPM exists before installing
 if [ -f "/ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm" ]; then
-    rpm-ostree install /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
+    rpm -ivh --nodigest --nofiledigest /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
 else
     echo "Error: Epson RPM file not found"
     exit 1
@@ -628,7 +628,7 @@ CONNECTION_FILE="/etc/NetworkManager/system-connections/${VPN_CONNECTION_NAME}.n
 # by setting password-flags=4 and username-flags=4, which means:
 # - NetworkManager will always prompt for username and password
 # - No credentials are stored in the connection file (security best practice)
-# - Users can optionally save credentials in their keyring after first successful connection
+# - Users can optionally saveepso credentials in their keyring after first successful connection
 cat > "$CONNECTION_FILE" << EOF
 [connection]
 id=${VPN_CONNECTION_NAME}
