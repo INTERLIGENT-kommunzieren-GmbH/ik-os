@@ -810,6 +810,13 @@ echo "Flatpak configuration completed"
 ### Install Custom Interligent Company Logos
 echo "Installing custom Interligent company logos..."
 
+# Plymouth HID-Fix für Framework 13 AMD
+# Add missing drivers to initramfs (Bluefin 20251228+)
+cat > /etc/dracut.conf.d/99-framework-amd-hid.conf << 'EOF'
+add_drivers+=" i2c_hid_acpi i2c_hid hid_amd usbhid "
+EOF
+echo "Dracut HID fix configured"
+
 # Install custom GDM logo
 echo "Installing custom GDM logo..."
 cp /ctx/logos/gdm/fedora-gdm-logo.png /usr/share/pixmaps/fedora-gdm-logo.png
