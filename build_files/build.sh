@@ -332,7 +332,12 @@ else
   KERNEL_SUFFIX=""
 fi
 QUALIFIED_KERNEL="$(rpm -qa | grep -P "kernel-(|${KERNEL_SUFFIX}-)(\\d+\\.\\d+\\.\\d+)" | sed -E "s/kernel-(|${KERNEL_SUFFIX}-)//" | head -n1)"
-/usr/bin/dracut --no-hostonly --kver "$QUALIFIED_KERNEL" --reproducible -v --add ostree -f "/lib/modules/$QUALIFIED_KERNEL/initramfs.img"
+/usr/bin/dracut --no-hostonly --kver "$QUALIFIED_KERNEL" --reproducible -v \
+  --add "ostree" \
+  --install "/lib/modules/$QUALIFIED_KERNEL/kernel/drivers/hid/i2c-hid/i2c_hid.ko" \
+  --install "/lib/modules/$QUALIFIED_KERNEL/kernel/drivers/hid/i2c-hid/i2c_hid_acpi.ko" \
+  --install "/lib/modules/$QUALIFIED_KERNEL/kernel/drivers/hid/hid-*.ko" \
+  -f "/lib/modules/$QUALIFIED_KERNEL/initramfs.img"
 chmod 0600 "/lib/modules/$QUALIFIED_KERNEL/initramfs.img"
 
 echo "Custom Plymouth watermark installation completed"
