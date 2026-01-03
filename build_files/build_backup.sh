@@ -807,12 +807,6 @@ fi
 
 echo "Flatpak configuration completed"
 
-echo "Adding Framework AMD 13 fix..."
-mkdir -p /etc/dracut.conf.d
-cat > /etc/dracut.conf.d/99-framework-amd-hid.conf << 'EOF'
-add_drivers+=" i2c_hid_acpi i2c_hid hid_amd usbhid "
-EOF
-
 ### Install Custom Interligent Company Logos
 echo "Installing custom Interligent company logos..."
 
@@ -843,7 +837,18 @@ chmod 644 /usr/share/plymouth/themes/bgrt/watermark.png
 # The BGRT theme uses spinner ImageDir, so this should work for both boot and shutdown
 echo "Configuring Plymouth to use BGRT theme with custom watermark..."
 plymouth-set-default-theme bgrt
-touch /usr/share/plymouth/themes/.stamp
+
+# Regenerate initramfs to include the new theme configuration
+echo "Regenerating initramfs to include Plymouth changes (Bluefin-style)..."
+# Align with Bluefin: generate initramfs under /lib/modules with ostree added
+if [[ -n "${AKMODS_FLAVOR:-}" && "${AKMODS_FLAVOR}" == "surface" ]]; then
+  KERNEL_SUFFIX="surface"
+else
+  KERNEL_SUFFIX=""
+fi
+QUALIFIED_KERNEL="$(rpm -qa | grep -P "kernel-(|${KERNEL_SUFFIX}-)(\\d+\\.\\d+\\.\\d+)" | sed -E "s/kernel-(|${KERNEL_SUFFIX}-)//" | head -n1)"
+/usr/bin/dracut --no-hostonly --kver "$QUALIFIED_KERNEL" --reproducible -v --add ostree -f "/lib/modules/$QUALIFIED_KERNEL/initramfs.img"
+chmod 0600 "/lib/modules/$QUALIFIED_KERNEL/initramfs.img"
 
 echo "Custom Plymouth watermark installation completed"
 
