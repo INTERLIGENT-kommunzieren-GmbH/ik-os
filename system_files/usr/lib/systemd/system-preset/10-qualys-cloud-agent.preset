@@ -1,3 +1,0 @@
-# Enable Qualys Cloud Agent service
-enable qualys-cloud-agent.service
-
