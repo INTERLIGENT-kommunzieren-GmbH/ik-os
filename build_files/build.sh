@@ -47,6 +47,17 @@ else
     exit 1
 fi
 
+### Install Claude Desktop
+CLAUDE_RPM_URL=$(curl -fsSL "https://api.github.com/repos/aaddrick/claude-desktop-debian/releases/latest" \
+    | grep "browser_download_url" \
+    | grep "x86_64\.rpm" \
+    | head -1 \
+    | cut -d '"' -f 4)
+CLAUDE_RPM="/tmp/claude-desktop.rpm"
+curl -L -o "$CLAUDE_RPM" "$CLAUDE_RPM_URL"
+dnf5 install -y "$CLAUDE_RPM"
+rm -f "$CLAUDE_RPM"
+
 ### Install CA Certificate
 # Install the Interligent CA certificate (CA-IK) to the system trust store
 # This allows applications to validate certificates signed by the Interligent CA
