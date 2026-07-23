@@ -7,45 +7,8 @@ set -ouex pipefail
 # this installs a package from fedora repos
 dnf5 install -y mc
 
-# Install cpio for RPM extraction fallback method
-dnf5 install -y cpio
-
 # Install uuidgen for generating connection UUIDs
 dnf5 install -y util-linux
-
-# Pre-install CUPS runtime dependencies so the escpr filter binary can execute.
-# The Epson RPM itself lacks digest metadata and must be installed via rpm directly,
-# which skips dependency resolution — so we pull deps explicitly first.
-dnf5 install -y cups cups-libs cups-filters libpng libjpeg-turbo
-
-# Check if Epson RPM exists before installing
-if [ -f "/ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm" ]; then
-    rpm -ivh --nodigest --nofiledigest /ctx/epson-inkjet-printer-escpr-1.8.6-1.x86_64.rpm
-
-    # The Epson RPM installs everything under /var/opt/epson-inkjet-printer-escpr/.
-    # On bootc/ostree systems /var is ephemeral — the files are lost after deployment,
-    # which is why CUPS cannot find the filter when adding a printer.
-    # Fix: relocate the tree to /usr/share/ (immutable, persistent) and add a
-    # tmpfiles.d rule to recreate /var/opt/... as a symlink at runtime.
-    EPSON_VAR="/var/opt/epson-inkjet-printer-escpr"
-    EPSON_USR="/usr/share/epson-inkjet-printer-escpr"
-    if [ -d "$EPSON_VAR" ]; then
-        cp -a "$EPSON_VAR" "$EPSON_USR"
-        rm -rf "$EPSON_VAR"
-    fi
-
-    # Restore SELinux file contexts for the filter binaries in their new location.
-    restorecon -Rv "$EPSON_USR" 2>/dev/null || true
-
-    # Create tmpfiles.d rule so /var/opt/epson-inkjet-printer-escpr is a symlink
-    # to the persistent /usr/share/ tree on every boot.
-    mkdir -p /usr/lib/tmpfiles.d
-    echo "L /var/opt/epson-inkjet-printer-escpr - - - - /usr/share/epson-inkjet-printer-escpr" \
-        > /usr/lib/tmpfiles.d/epson-inkjet-printer-escpr.conf
-else
-    echo "Error: Epson RPM file not found"
-    exit 1
-fi
 
 ### Install Claude Desktop
 CLAUDE_RPM_URL=$(curl -fsSL "https://api.github.com/repos/aaddrick/claude-desktop-debian/releases/latest" \
