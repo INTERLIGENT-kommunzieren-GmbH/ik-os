@@ -174,6 +174,21 @@ The app's **Cowork** tab runs agentic tasks in a QEMU/KVM virtual machine, so `q
 Debian, no `kvm` group membership is needed: Fedora's udev defaults already expose `/dev/kvm` and
 `/dev/vhost-vsock` at mode `0666`. Hardware virtualization must be enabled in firmware.
 
+## Sidra
+
+[Sidra](https://github.com/wimpysworld/sidra) is an Apple Music desktop client. Upstream publishes an
+RPM on GitHub Releases, but there is no COPR, no dnf repository and no published checksums or
+signatures, so the build can only verify the RPM's own header and payload digests — enough to catch a
+corrupted download, not tampering. As with Claude Desktop, no version is pinned: the newest release
+tag is resolved from the `/releases/latest` redirect, which (unlike the GitHub API) has no rate limit
+to fail CI builds on.
+
+The RPM installs to `/opt`, which on this image is a symlink to `/var/opt`. Because
+`ostree container commit` discards `/var`, installing it directly would make the app disappear from
+deployed systems. The build therefore unpacks the RPM, relocates the payload to `/usr/lib/sidra`,
+symlinks `/usr/bin/sidra`, and rewrites the desktop entry's `Exec=` — the only file that hardcodes the
+old path.
+
 ## Flatpak Installation
 
 This image template follows immutable OS principles by configuring flatpaks for post-deployment installation rather than installing them during the image build process. This approach keeps the base image clean and allows for better flexibility.

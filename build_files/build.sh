@@ -93,6 +93,56 @@ rm -rf "$CLAUDE_WORK"
 install -D -m 0644 /ctx/system_files/usr/lib/modules-load.d/vhost_vsock.conf \
     /usr/lib/modules-load.d/vhost_vsock.conf
 
+### Install Sidra (Apple Music desktop client, always newest)
+# Upstream ships an unsigned RPM on GitHub Releases — no COPR, no dnf repo and
+# no published checksums — so the only integrity check available is the RPM's
+# own header/payload digests (catches a corrupted download, not tampering).
+# The tag comes from the /releases/latest redirect rather than the GitHub API,
+# which avoids the API's 60 req/h unauthenticated rate limit on CI runners.
+SIDRA_WORK="/tmp/sidra"
+mkdir -p "$SIDRA_WORK"
+
+SIDRA_TAG=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
+    "https://github.com/wimpysworld/sidra/releases/latest" | sed 's|.*/tag/||')
+test -n "$SIDRA_TAG"
+echo "Installing Sidra ${SIDRA_TAG}"
+
+curl -fsSL -o "$SIDRA_WORK/sidra.rpm" \
+    "https://github.com/wimpysworld/sidra/releases/download/${SIDRA_TAG}/Sidra-${SIDRA_TAG}-linux-x86_64.rpm"
+rpm -K "$SIDRA_WORK/sidra.rpm"
+
+# The RPM installs to /opt, which is a symlink to /var/opt here, and /var is
+# discarded by `ostree container commit` — installing it as-is would make the
+# app vanish from deployed systems. Unpack it and relocate to /usr/lib instead.
+(cd "$SIDRA_WORK" && rpm2cpio sidra.rpm | cpio -idm --quiet)
+mkdir -p /usr/lib/sidra
+cp -a "$SIDRA_WORK/opt/Sidra/." /usr/lib/sidra/
+ln -sf ../lib/sidra/sidra /usr/bin/sidra
+
+# User namespaces work on Fedora, so Chromium uses the userns sandbox and the
+# SUID helper must not be setuid — this mirrors what the RPM's postinstall
+# scriptlet decides at install time, which never runs here.
+chmod 0755 /usr/lib/sidra/chrome-sandbox
+
+# Desktop entry (its Exec is the only file hardcoding /opt/Sidra) and icons.
+install -D -m 0644 "$SIDRA_WORK/usr/share/applications/sidra.desktop" \
+    /usr/share/applications/sidra.desktop
+sed -i 's|^Exec=/opt/Sidra/sidra|Exec=/usr/bin/sidra|' /usr/share/applications/sidra.desktop
+grep -q '^Exec=/usr/bin/sidra' /usr/share/applications/sidra.desktop
+for sidra_icon in "$SIDRA_WORK"/usr/share/icons/hicolor/*/apps/sidra.png; do
+    sidra_size=$(basename "$(dirname "$(dirname "$sidra_icon")")")
+    install -D -m 0644 "$sidra_icon" "/usr/share/icons/hicolor/${sidra_size}/apps/sidra.png"
+done
+
+# Every library Sidra declares is already in the base image; fail the build if
+# that ever stops being true, since unpacking skips dnf's dependency solving.
+if ldd /usr/lib/sidra/sidra | grep "not found"; then
+    echo "Sidra: unresolved shared libraries" >&2
+    exit 1
+fi
+
+rm -rf "$SIDRA_WORK"
+
 ### Install CA Certificate
 # Install the Interligent CA certificate (CA-IK) to the system trust store
 # This allows applications to validate certificates signed by the Interligent CA
