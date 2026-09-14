@@ -149,6 +149,31 @@ The [Containerfile](./Containerfile) defines the operations used to customize th
 
 The [build.sh](./build_files/build.sh) file is called from your Containerfile. It is the best place to install new packages or make any other customization to your system. There are customization examples contained within it for your perusal.
 
+## Claude Desktop
+
+The image ships Anthropic's **official** Claude Desktop build. Anthropic publishes the Linux app only
+as a `.deb` for Debian and Ubuntu — there is no official RPM or Flatpak, and Fedora is not a platform
+Anthropic supports for the desktop app — so `build.sh` unpacks their published package into the image
+instead of using a third-party repackage.
+
+No version is pinned: every build installs the newest package published in Anthropic's apt pool. The
+integrity of that package is established through their own signing chain rather than a committed
+checksum:
+
+1. `build_files/certs/claude-desktop-archive-keyring.asc` is Anthropic's release signing key, checked
+   at build time against the fingerprint `31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE`.
+2. That key verifies the repository's signed `InRelease` index.
+3. `InRelease` supplies the checksum for the `Packages` list.
+4. `Packages` supplies the checksum for the `.deb` itself.
+
+Any broken link in that chain fails the build. The build also asserts that the Chromium SUID sandbox
+helper kept its setuid bit and that every shared library the app needs is present in the base image.
+
+The app's **Cowork** tab runs agentic tasks in a QEMU/KVM virtual machine, so `qemu-system-x86-core`,
+`edk2-ovmf` and `virtiofsd` are installed explicitly and `vhost_vsock` is loaded at boot. Unlike on
+Debian, no `kvm` group membership is needed: Fedora's udev defaults already expose `/dev/kvm` and
+`/dev/vhost-vsock` at mode `0666`. Hardware virtualization must be enabled in firmware.
+
 ## Flatpak Installation
 
 This image template follows immutable OS principles by configuring flatpaks for post-deployment installation rather than installing them during the image build process. This approach keeps the base image clean and allows for better flexibility.

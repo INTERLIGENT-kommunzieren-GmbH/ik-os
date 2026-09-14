@@ -10,16 +10,88 @@ dnf5 install -y mc
 # Install uuidgen for generating connection UUIDs
 dnf5 install -y util-linux
 
-### Install Claude Desktop
-CLAUDE_RPM_URL=$(curl -fsSL "https://api.github.com/repos/aaddrick/claude-desktop-debian/releases/latest" \
-    | grep "browser_download_url" \
-    | grep "x86_64\.rpm" \
-    | head -1 \
-    | cut -d '"' -f 4)
-CLAUDE_RPM="/tmp/claude-desktop.rpm"
-curl -L -o "$CLAUDE_RPM" "$CLAUDE_RPM_URL"
-dnf5 install -y "$CLAUDE_RPM"
-rm -f "$CLAUDE_RPM"
+# Claude Desktop's Cowork tab runs agentic tasks in a QEMU/KVM virtual machine.
+# These are already part of bluefin-dx today; installing them explicitly makes
+# the dependency intentional so a base-image change can't silently break Cowork.
+dnf5 install -y qemu-system-x86-core edk2-ovmf virtiofsd
+
+### Install Claude Desktop (official Anthropic build, always newest)
+# Anthropic publishes Claude Desktop for Linux only as a .deb — there is no
+# official RPM or Flatpak — so we unpack their published package into the image.
+# Trust chain: committed key fingerprint -> signed InRelease -> Packages index
+# checksum -> .deb checksum. Nothing here trusts plain HTTPS alone.
+CLAUDE_REPO="https://downloads.claude.ai/claude-desktop/apt/stable"
+CLAUDE_KEY_FPR="31DDDE24DDFAB679F42D7BD2BAA929FF1A7ECACE"
+CLAUDE_WORK="/tmp/claude-desktop"
+mkdir -p "$CLAUDE_WORK"
+# gpg insists on a homedir, and the bootc base has no writable /root at
+# build time (/root -> /var/roothome, and /var is a cache mount here).
+export GNUPGHOME="$CLAUDE_WORK/gnupg"
+mkdir -m 700 "$GNUPGHOME"
+
+# 1. Release signing key, checked against the fingerprint above.
+gpg --show-keys --with-colons --fingerprint /ctx/certs/claude-desktop-archive-keyring.asc |
+    grep -q "^fpr:::::::::${CLAUDE_KEY_FPR}:"
+gpg --dearmor -o "$CLAUDE_WORK/key.gpg" /ctx/certs/claude-desktop-archive-keyring.asc
+
+# 2. Signed repository index.
+curl -fsSL -o "$CLAUDE_WORK/InRelease" "$CLAUDE_REPO/dists/stable/InRelease"
+gpgv --keyring "$CLAUDE_WORK/key.gpg" "$CLAUDE_WORK/InRelease"
+
+# 3. Package list, checked against the signed index. The /^[^[:space:]]/ reset
+#    keeps the match inside the SHA256 block; SHA512 lists the same filename.
+curl -fsSL -o "$CLAUDE_WORK/Packages" "$CLAUDE_REPO/dists/stable/main/binary-amd64/Packages"
+CLAUDE_PKG_SHA=$(awk '/^SHA256:/{s=1;next} /^[^[:space:]]/{s=0}
+    s && $3=="main/binary-amd64/Packages"{print $1; exit}' "$CLAUDE_WORK/InRelease")
+echo "${CLAUDE_PKG_SHA}  ${CLAUDE_WORK}/Packages" | sha256sum -c -
+
+# 4. Newest version in that list, with its filename and checksum.
+read -r CLAUDE_VERSION CLAUDE_SHA256 CLAUDE_FILENAME <<<"$(awk -v RS='' '
+    { ver=""; sha=""; fn=""; n=split($0, L, "\n")
+      for (i=1; i<=n; i++) {
+          if (L[i] ~ /^Version: /)  ver = substr(L[i], 10)
+          if (L[i] ~ /^SHA256: /)   sha = substr(L[i], 9)
+          if (L[i] ~ /^Filename: /) fn  = substr(L[i], 11)
+      }
+      if (ver != "" && sha != "" && fn != "") print ver, sha, fn
+    }' "$CLAUDE_WORK/Packages" | sort -V -k1,1 | tail -1)"
+echo "Installing Claude Desktop ${CLAUDE_VERSION}"
+
+# 5. The package itself.
+curl -fsSL -o "$CLAUDE_WORK/claude-desktop.deb" "${CLAUDE_REPO}/${CLAUDE_FILENAME}"
+echo "${CLAUDE_SHA256}  ${CLAUDE_WORK}/claude-desktop.deb" | sha256sum -c -
+
+# 6. Unpack the payload. Everything lands under /usr; tar keeps the setuid bit
+#    on chrome-sandbox. Debian's lintian overrides are dropped.
+(cd "$CLAUDE_WORK" && ar x claude-desktop.deb)
+tar --extract --xz --same-permissions --same-owner \
+    --file "$CLAUDE_WORK/data.tar.xz" --directory / \
+    --exclude='./usr/share/lintian*' ./usr
+
+# 7. The .deb's postinst installs the GNOME Shell search provider; maintainer
+#    scripts never run here, so do it ourselves. Its other two jobs are
+#    Debian-only and deliberately skipped: an AppArmor profile (Fedora uses
+#    SELinux) and registering Anthropic's apt repository.
+CLAUDE_SP="/usr/lib/claude-desktop/resources/gnome-search-provider"
+install -D -m 0644 "$CLAUDE_SP/com.anthropic.Claude.search-provider.ini" \
+    /usr/share/gnome-shell/search-providers/com.anthropic.Claude.search-provider.ini
+install -D -m 0644 "$CLAUDE_SP/com.anthropic.Claude.SearchProvider.service" \
+    /usr/share/dbus-1/services/com.anthropic.Claude.SearchProvider.service
+
+# 8. Assert Chromium's SUID sandbox helper survived extraction, and fail the
+#    build if the base image ever stops shipping a required library.
+test -u /usr/lib/claude-desktop/chrome-sandbox
+if ldd /usr/lib/claude-desktop/claude-desktop | grep "not found"; then
+    echo "Claude Desktop: unresolved shared libraries" >&2
+    exit 1
+fi
+
+unset GNUPGHOME
+rm -rf "$CLAUDE_WORK"
+
+# Cowork also needs the vhost_vsock kernel module; see the file's own comment.
+install -D -m 0644 /ctx/system_files/usr/lib/modules-load.d/vhost_vsock.conf \
+    /usr/lib/modules-load.d/vhost_vsock.conf
 
 ### Install CA Certificate
 # Install the Interligent CA certificate (CA-IK) to the system trust store
