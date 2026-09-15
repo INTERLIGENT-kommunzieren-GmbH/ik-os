@@ -205,6 +205,20 @@ effect at the *next* login after an app writes a new entry; a `.path` unit watch
 would retrigger itself, since `update-desktop-database` writes its cache into the directory it
 watches.
 
+### Autostart caveat
+
+Claude Desktop rewrites its own `com.anthropic.Claude.desktop` into
+`~/.local/share/applications` a few seconds after every launch. Since the official package uses that
+same desktop ID, the user entry **shadows** the system one, so the rewrite replaces the very entry a
+running window is matched to; GNOME Shell reloads its app list and the window loses its icon. A
+window mapped during early shell startup does not recover, one launched from a settled session does.
+
+The visible symptom is: with Claude set to launch at login, its icon appears for a few seconds and
+then disappears while the app keeps running; starting it manually is fine. The fix is to turn off
+*launch at login* in Claude's own settings. This is upstream behaviour and affects Anthropic's `.deb`
+on Debian/Ubuntu equally — the old third-party package escaped it only because it used a different
+desktop ID (`claude-desktop-unofficial.desktop`), so the app's rewrite touched an unrelated file.
+
 ## Flatpak Installation
 
 This image template follows immutable OS principles by configuring flatpaks for post-deployment installation rather than installing them during the image build process. This approach keeps the base image clean and allows for better flexibility.
