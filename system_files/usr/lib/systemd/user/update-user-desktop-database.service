@@ -1,0 +1,17 @@
+[Unit]
+Description=Rebuild the per-user desktop database
+Documentation=man:update-desktop-database(1)
+# Apps such as Claude Desktop write their own .desktop entry into the user's
+# applications directory but never refresh that directory's mimeinfo.cache.
+# A stale cache there shadows the system entry of the same desktop ID, so GIO
+# reports no registered applications for the app's URI scheme and portal-based
+# hand-off from a sandboxed browser fails with "No apps installed that can
+# open ...". Rebuilding the cache at login keeps the association correct.
+ConditionPathExists=%h/.local/share/applications
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/update-desktop-database %h/.local/share/applications
+
+[Install]
+WantedBy=default.target

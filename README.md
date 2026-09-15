@@ -189,6 +189,22 @@ deployed systems. The build therefore unpacks the RPM, relocates the payload to 
 symlinks `/usr/bin/sidra`, and rewrites the desktop entry's `Exec=` — the only file that hardcodes the
 old path.
 
+## Per-user desktop database
+
+Claude Desktop writes its own `com.anthropic.Claude.desktop` into
+`~/.local/share/applications` without refreshing that directory's `mimeinfo.cache`. Because a user
+entry shadows the system entry with the same desktop ID, a stale cache there makes GIO report *no
+registered applications* for `x-scheme-handler/claude` — even though `xdg-mime query default` still
+answers correctly. The visible symptom is that signing in from a sandboxed (Flatpak) browser fails
+with GNOME's *"No apps installed that can open …"* dialog, because the portal queries the registered
+list rather than the default.
+
+The image ships `update-user-desktop-database.service`, a systemd **user** unit enabled by default,
+which runs `update-desktop-database ~/.local/share/applications` at every login. Note this takes
+effect at the *next* login after an app writes a new entry; a `.path` unit watching the directory
+would retrigger itself, since `update-desktop-database` writes its cache into the directory it
+watches.
+
 ## Flatpak Installation
 
 This image template follows immutable OS principles by configuring flatpaks for post-deployment installation rather than installing them during the image build process. This approach keeps the base image clean and allows for better flexibility.

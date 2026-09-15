@@ -143,6 +143,19 @@ fi
 
 rm -rf "$SIDRA_WORK"
 
+### Keep the per-user desktop database fresh
+# Both apps above (and Claude Desktop in particular) write their own .desktop
+# entry into ~/.local/share/applications without refreshing that directory's
+# mimeinfo.cache. Because the user entry shadows the system one of the same
+# desktop ID, a stale cache there makes GIO report no registered applications
+# for the app's URI scheme, and portal hand-off from a sandboxed browser fails
+# with "No apps installed that can open ...". Rebuild it at every login.
+install -D -m 0644 /ctx/system_files/usr/lib/systemd/user/update-user-desktop-database.service \
+    /usr/lib/systemd/user/update-user-desktop-database.service
+mkdir -p /usr/lib/systemd/user/default.target.wants
+ln -sf ../update-user-desktop-database.service \
+    /usr/lib/systemd/user/default.target.wants/update-user-desktop-database.service
+
 ### Install CA Certificate
 # Install the Interligent CA certificate (CA-IK) to the system trust store
 # This allows applications to validate certificates signed by the Interligent CA
