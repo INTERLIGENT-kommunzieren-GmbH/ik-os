@@ -484,3 +484,96 @@ dconf update
 echo "GDM logo configuration updated successfully"
 
 echo "Custom Interligent company logos installation completed"
+
+### Install Interligent Desktop Backgrounds
+# Every image in /ctx/backgrounds is installed to /usr/share/backgrounds/ik-os
+# and registered with GNOME, so the whole set shows up in
+# Settings -> Appearance -> Background. One of them is the company default.
+echo "Installing Interligent desktop backgrounds..."
+
+BG_SRC="/ctx/backgrounds"
+BG_DIR="/usr/share/backgrounds/ik-os"
+
+# The background a fresh account starts on. A default, not a lock: users are
+# free to pick any of the others (or their own) in Settings.
+DEFAULT_BG="ik-hubble.jpg"
+
+shopt -s nullglob
+BACKGROUNDS=("$BG_SRC"/*.jpg "$BG_SRC"/*.jpeg "$BG_SRC"/*.png)
+shopt -u nullglob
+
+if [ ${#BACKGROUNDS[@]} -eq 0 ]; then
+    echo "Warning: no images found in ${BG_SRC}, keeping the Bluefin default background"
+else
+    mkdir -p "$BG_DIR"
+    for bg in "${BACKGROUNDS[@]}"; do
+        install -D -m 0644 "$bg" "${BG_DIR}/$(basename "$bg")"
+    done
+    echo "Installed ${#BACKGROUNDS[@]} backgrounds ($(du -sh "$BG_DIR" | cut -f1)) to ${BG_DIR}"
+
+    # Fail the build instead of silently falling back: a renamed or removed file
+    # would otherwise ship every desktop with whatever Bluefin's default is.
+    if [ ! -f "${BG_DIR}/${DEFAULT_BG}" ]; then
+        echo "DEFAULT_BG='${DEFAULT_BG}' is not present in ${BG_SRC}. Available:" >&2
+        (cd "$BG_DIR" && printf '  %s\n' *) >&2
+        exit 1
+    fi
+
+    # Register the set with GNOME's background chooser. Without this XML the
+    # files just sit on disk and never appear in Settings.
+    # Display names come from the filename: ik-winter-forest.jpg -> "Winter Forest".
+    echo "Registering backgrounds with the GNOME background chooser..."
+    BG_XML="/usr/share/gnome-background-properties/ik-os.xml"
+    mkdir -p "$(dirname "$BG_XML")"
+    {
+        echo '<?xml version="1.0" encoding="UTF-8"?>'
+        echo '<!DOCTYPE wallpapers SYSTEM "gnome-wp-list.dtd">'
+        echo '<wallpapers>'
+        for bg in "${BACKGROUNDS[@]}"; do
+            bg_file="${BG_DIR}/$(basename "$bg")"
+            bg_name=$(basename "$bg")
+            bg_name="${bg_name%.*}"
+            bg_name=$(printf '%s' "${bg_name#ik-}" | sed -e 's/-/ /g' -e 's/\b\(.\)/\u\1/g')
+            printf '  <wallpaper deleted="false">\n'
+            printf '    <name>%s</name>\n' "$bg_name"
+            printf '    <filename>%s</filename>\n' "$bg_file"
+            printf '    <filename-dark>%s</filename-dark>\n' "$bg_file"
+            printf '    <options>zoom</options>\n'
+            printf '    <shade_type>solid</shade_type>\n'
+            printf '    <pcolor>#1a1a1a</pcolor>\n'
+            printf '    <scolor>#1a1a1a</scolor>\n'
+            printf '  </wallpaper>\n'
+        done
+        echo '</wallpapers>'
+    } > "$BG_XML"
+    chmod 644 "$BG_XML"
+
+    # Set the default through a gschema override rather than a dconf database,
+    # the same mechanism Bluefin uses for its own default (zz0-bluefin-*). The
+    # zz2- prefix sorts after Bluefin's overrides, and later overrides win.
+    echo "Setting ${DEFAULT_BG} as the default background..."
+    cat > /usr/share/glib-2.0/schemas/zz2-ik-os-modifications.gschema.override << EOF
+[org.gnome.desktop.background]
+picture-uri='file://${BG_DIR}/${DEFAULT_BG}'
+picture-uri-dark='file://${BG_DIR}/${DEFAULT_BG}'
+picture-options='zoom'
+primary-color='#1a1a1a'
+secondary-color='#1a1a1a'
+
+[org.gnome.desktop.screensaver]
+picture-uri='file://${BG_DIR}/${DEFAULT_BG}'
+picture-options='zoom'
+primary-color='#1a1a1a'
+EOF
+    chmod 644 /usr/share/glib-2.0/schemas/zz2-ik-os-modifications.gschema.override
+    glib-compile-schemas /usr/share/glib-2.0/schemas
+
+    # Read the compiled default back: an override for a key that no longer
+    # exists is ignored silently, so compiling successfully proves nothing.
+    GSETTINGS_BACKEND=memory gsettings get org.gnome.desktop.background picture-uri \
+        | grep -qF "file://${BG_DIR}/${DEFAULT_BG}"
+
+    echo "Default background: ${DEFAULT_BG}"
+fi
+
+echo "Interligent desktop backgrounds installation completed"

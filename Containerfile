@@ -1,6 +1,7 @@
 # Allow build scripts to be referenced without being copied into the final image
 FROM scratch AS ctx
 COPY build_files /
+COPY backgrounds /backgrounds
 COPY flatpaks /flatpaks
 COPY logos /logos
 COPY system_files /system_files

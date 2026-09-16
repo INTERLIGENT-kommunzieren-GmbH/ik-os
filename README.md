@@ -251,6 +251,24 @@ The flatpak lists are installed to:
 
 This ensures compatibility with Bluefin's `ujust install-system-flatpaks` command.
 
+## Desktop backgrounds
+
+Every image in [`backgrounds/`](./backgrounds) is installed to `/usr/share/backgrounds/ik-os/` and
+registered in `/usr/share/gnome-background-properties/ik-os.xml`, so the whole company set appears
+in **Settings → Appearance → Background**. Display names are derived from the filename:
+`ik-winter-forest.jpg` becomes *Winter Forest*.
+
+The background a new account starts on is `DEFAULT_BG` in
+[`build_files/build.sh`](./build_files/build.sh), currently `ik-hubble.jpg`. It is a default, not a
+locked setting — users may pick any other image. The build fails if `DEFAULT_BG` is missing, so a
+renamed file cannot silently fall back to Bluefin's wallpaper.
+
+The default is applied through a gschema override (`zz2-ik-os-modifications.gschema.override`), the
+same mechanism Bluefin uses for its own default (`zz0-bluefin-*`); the `zz2-` prefix sorts after
+Bluefin's files and later overrides win. Keeping it in `/usr` instead of a dconf database avoids an
+`/etc` three-way merge on upgrades. See [`backgrounds/README.md`](./backgrounds/README.md) for how to
+add or replace images.
+
 ## build.yml
 
 The [build.yml](./.github/workflows/build.yml) Github Actions workflow creates your custom OCI image and publishes it to the Github Container Registry (GHCR). By default, the image name will match the Github repository name. There are several environment variables at the start of the workflow which may be of interest to change.

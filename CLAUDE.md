@@ -11,6 +11,7 @@ Custom Fedora-based OS image for Interligent Kommunizieren GmbH, built on Univer
 - **`./system_files/`**: Static configuration files (e.g., systemd units, presets, tmpfiles) that are layered into the image.
 - **`./flatpaks/`**: Manifests for Flatpaks to be installed post-deployment using `ujust install-system-flatpaks`.
 - **`./logos/`**: Branding assets for GDM and Plymouth watermarks.
+- **`./backgrounds/`**: Company desktop wallpapers, installed to `/usr/share/backgrounds/ik-os/` and offered in GNOME Settings. The default is `DEFAULT_BG` in `build.sh`.
 
 ## Build, Test, and Development Commands
 
