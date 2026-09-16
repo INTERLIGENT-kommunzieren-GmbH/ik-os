@@ -251,6 +251,57 @@ The flatpak lists are installed to:
 
 This ensures compatibility with Bluefin's `ujust install-system-flatpaks` command.
 
+## Teams video backgrounds
+
+The image ships **teams-for-linux** (upstream's RPM, newest release at build time) together with
+the company video backgrounds in [`teams-backgrounds/`](./teams-backgrounds).
+
+Teams builds its background picker itself and offers no API for adding to it. What
+`teams-for-linux` can do is redirect every request Teams makes for
+`statics.teams.cdn.office.net/evergreen-assets/backgroundimages/…` to a URL of our choosing. So a
+company background reaches the picker by being served **in place of one of Microsoft's own
+assets** — the names listed in `teams-backgrounds/slots.txt`, matched to the images in sorted
+order. `ik-teams-backgrounds.service` (127.0.0.1:8421) answers those requests and **proxies
+everything it does not claim back to Microsoft's CDN**, so the rest of the picker looks untouched;
+without the proxy the redirect turns every unclaimed tile into an empty box.
+
+Two details that cost an afternoon to find, both encoded in the service:
+
+- Responses **must** carry `Access-Control-Allow-Origin`. The picker draws the chosen image into a
+  canvas, so without the header Teams fetches the image and then silently refuses to apply it — the
+  background simply never changes.
+- `<customBGServiceBaseUrl>/config.json` must be a bare JSON **array**. The documented
+  `{"videoBackgroundImages": […]}` object makes the app throw *"configJSON is not iterable"*.
+  Nothing has consumed that list since 2.x anyway; the manifest exists only to keep the app log
+  clean.
+
+Client defaults live in `/etc/teams-for-linux/config.json` (custom backgrounds on, the service URL,
+and `multiAccount`). The app merges it with the user's own `~/.config/teams-for-linux/config.json`,
+**user keys winning**, so these are defaults and not locks.
+
+### Why the RPM and not the Flatpak
+
+A Flatpak can never read `/etc/teams-for-linux/config.json`: flatpak refuses to share `/etc` with a
+sandbox (`Path "/etc" is reserved by Flatpak`), and `/usr` likewise. Layering upstream's RPM is what
+makes the configuration image-owned and declarative. The cost is roughly 350 MB unpacked, updates on
+the image cadence instead of Flathub's, and no Flatpak sandbox.
+
+**After rebasing, remove the Flathub build** or there will be two Teams entries in the launcher:
+
+```bash
+flatpak uninstall --system com.github.IsmaelMartinez.teams_for_linux
+```
+
+The profile also moves from `~/.var/app/com.github.IsmaelMartinez.teams_for_linux/config/teams-for-linux`
+to `~/.config/teams-for-linux`. Copy that directory across to keep the session, otherwise it is a
+fresh sign-in.
+
+### If a background stops appearing
+
+Microsoft retired the asset name it was mapped to. `journalctl -u ik-teams-backgrounds` logs every
+asset Teams requests, marked `ik` (served from the image) or `ms` (proxied) — pick a live name from
+that log and replace the dead line in `slots.txt`.
+
 ## Desktop backgrounds
 
 Every image in [`backgrounds/`](./backgrounds) is installed to `/usr/share/backgrounds/ik-os/` and

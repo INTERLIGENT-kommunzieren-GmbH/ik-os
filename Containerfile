@@ -2,6 +2,7 @@
 FROM scratch AS ctx
 COPY build_files /
 COPY backgrounds /backgrounds
+COPY teams-backgrounds /teams-backgrounds
 COPY flatpaks /flatpaks
 COPY logos /logos
 COPY system_files /system_files

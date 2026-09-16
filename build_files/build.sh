@@ -577,3 +577,159 @@ EOF
 fi
 
 echo "Interligent desktop backgrounds installation completed"
+
+### Install Microsoft Teams client (teams-for-linux, always newest)
+# Microsoft publishes no Linux client at all, so the image carries the
+# unofficial Electron one. It is layered rather than installed as a Flatpak for
+# one concrete reason: the background service below is configured through
+# /etc/teams-for-linux/config.json, and a Flatpak can never read that file --
+# flatpak refuses to share /etc with a sandbox ("Path /etc is reserved by
+# Flatpak"), so a Flatpak install would need per-user config seeding instead.
+#
+# Upstream ships an unsigned RPM on GitHub Releases -- no repo, no published
+# checksums -- so the only integrity check available is the RPM's own
+# header/payload digests, exactly as for Sidra above.
+TFL_WORK="/tmp/teams-for-linux"
+mkdir -p "$TFL_WORK"
+
+TFL_TAG=$(curl -fsS -o /dev/null -w '%{redirect_url}' \
+    "https://github.com/IsmaelMartinez/teams-for-linux/releases/latest" | sed 's|.*/tag/||')
+test -n "$TFL_TAG"
+echo "Installing teams-for-linux ${TFL_TAG}"
+
+curl -fsSL -o "$TFL_WORK/teams-for-linux.rpm" \
+    "https://github.com/IsmaelMartinez/teams-for-linux/releases/download/${TFL_TAG}/teams-for-linux-${TFL_TAG#v}.x86_64.rpm"
+rpm -K "$TFL_WORK/teams-for-linux.rpm"
+
+# Same /opt trap as Sidra: /opt is a symlink to /var/opt and /var is discarded
+# by `ostree container commit`, so the payload is relocated into /usr/lib.
+(cd "$TFL_WORK" && rpm2cpio teams-for-linux.rpm | cpio -idm --quiet)
+mkdir -p /usr/lib/teams-for-linux
+cp -a "$TFL_WORK/opt/teams-for-linux/." /usr/lib/teams-for-linux/
+ln -sf ../lib/teams-for-linux/teams-for-linux /usr/bin/teams-for-linux
+
+# User namespaces work on Fedora, so Chromium uses the userns sandbox and the
+# SUID helper must not be setuid -- this is the decision the RPM's postinstall
+# scriptlet makes at install time, which never runs here.
+chmod 0755 /usr/lib/teams-for-linux/chrome-sandbox
+
+# Desktop entry (its Exec is the only file hardcoding /opt/teams-for-linux) and icons.
+install -D -m 0644 "$TFL_WORK/usr/share/applications/teams-for-linux.desktop" \
+    /usr/share/applications/teams-for-linux.desktop
+sed -i 's|/opt/teams-for-linux/teams-for-linux|/usr/bin/teams-for-linux|g' \
+    /usr/share/applications/teams-for-linux.desktop
+# Upstream's entry forces --ozone-platform=x11, so the app would run through
+# XWayland on this Wayland-first image -- blurry on fractional scaling. The
+# Flathub build, which is what people here ran before, does not force it. The
+# hint lets Electron pick Wayland when there is a Wayland session and fall back
+# to X11 otherwise.
+sed -i 's|--ozone-platform=x11|--ozone-platform-hint=auto|g' \
+    /usr/share/applications/teams-for-linux.desktop
+grep -q '/usr/bin/teams-for-linux' /usr/share/applications/teams-for-linux.desktop
+grep -q 'ozone-platform=x11' /usr/share/applications/teams-for-linux.desktop && {
+    echo "teams-for-linux: XWayland flag survived the rewrite" >&2; exit 1; } || true
+for tfl_icon in "$TFL_WORK"/usr/share/icons/hicolor/*/apps/teams-for-linux.png; do
+    tfl_size=$(basename "$(dirname "$(dirname "$tfl_icon")")")
+    install -D -m 0644 "$tfl_icon" "/usr/share/icons/hicolor/${tfl_size}/apps/teams-for-linux.png"
+done
+
+# Every library it declares is already in the base image; fail the build if that
+# ever stops being true, since unpacking skips dnf's dependency solving.
+if ldd /usr/lib/teams-for-linux/teams-for-linux | grep "not found"; then
+    echo "teams-for-linux: unresolved shared libraries" >&2
+    exit 1
+fi
+
+rm -rf "$TFL_WORK"
+
+### Install Interligent Teams video backgrounds
+# Teams builds the background picker itself and teams-for-linux can only
+# redirect the image requests it makes, so a company background reaches the
+# picker by being served in place of one of Microsoft's own assets. The asset
+# names taken over are listed in teams-backgrounds/slots.txt; everything else is
+# proxied back to Microsoft by the service, which is why the rest of the picker
+# still looks normal instead of turning into a grid of empty tiles.
+echo "Installing Interligent Teams video backgrounds..."
+
+TBG_SRC="/ctx/teams-backgrounds"
+TBG_DIR="/usr/share/ik-os/teams-backgrounds"
+
+shopt -s nullglob
+TEAMS_BGS=("$TBG_SRC"/*.jpg "$TBG_SRC"/*.jpeg "$TBG_SRC"/*.png)
+shopt -u nullglob
+
+if [ ${#TEAMS_BGS[@]} -eq 0 ]; then
+    echo "Warning: no images found in ${TBG_SRC}, skipping Teams backgrounds"
+else
+    mkdir -p "$TBG_DIR"
+
+    # Teams wants ~1920x1080 for the background and ~280x158 for the picker
+    # thumbnail; sources are centre-cropped to 16:9. ImageMagick is already in
+    # the base image, so no package is needed for this.
+    for tbg in "${TEAMS_BGS[@]}"; do
+        tbg_name=$(basename "$tbg"); tbg_name="${tbg_name%.*}"
+        magick "$tbg" -resize 1920x1080^ -gravity center -extent 1920x1080 \
+            -quality 88 "${TBG_DIR}/${tbg_name}.jpg"
+        magick "$tbg" -resize 280x158^ -gravity center -extent 280x158 \
+            -quality 85 "${TBG_DIR}/${tbg_name}-thumb.jpg"
+    done
+    install -D -m 0644 "${TBG_SRC}/slots.txt" "${TBG_DIR}/slots.txt"
+    chmod 644 "${TBG_DIR}"/*.jpg
+    echo "Generated ${#TEAMS_BGS[@]} Teams backgrounds ($(du -sh "$TBG_DIR" | cut -f1))"
+
+    # One Microsoft asset can only be taken over by one image. Fail the build
+    # rather than let an image silently never appear in the picker.
+    TBG_SLOTS=$(grep -cv '^[[:space:]]*#\|^[[:space:]]*$' "${TBG_DIR}/slots.txt")
+    if [ "$TBG_SLOTS" -lt "${#TEAMS_BGS[@]}" ]; then
+        echo "only ${TBG_SLOTS} slots in slots.txt for ${#TEAMS_BGS[@]} images" >&2
+        exit 1
+    fi
+
+    # teams-for-linux fetches this manifest once at startup. The picker ignores
+    # it (nothing has consumed the get-custom-bg-list IPC since 2.x), but
+    # answering keeps a warning out of the app log. It must be a bare JSON
+    # array: the app iterates whatever it parses.
+    python3 - "$TBG_DIR" <<'PYEOF'
+import json, os, sys
+root = sys.argv[1]
+names = sorted(f[:-4] for f in os.listdir(root)
+               if f.endswith(".jpg") and not f.endswith("-thumb.jpg"))
+json.dump([{"filetype": "jpg", "id": n,
+            "name": n.removeprefix("ik-").replace("-", " ").title(),
+            "src": f"/{n}.jpg", "thumb_src": f"/{n}-thumb.jpg"} for n in names],
+          open(os.path.join(root, "config.json"), "w"), indent=2)
+PYEOF
+    chmod 644 "${TBG_DIR}/config.json"
+
+    # The loopback service that answers the redirected requests.
+    install -D -m 0755 /ctx/system_files/usr/libexec/ik-os/teams-background-server.py \
+        /usr/libexec/ik-os/teams-background-server.py
+    install -D -m 0644 /ctx/system_files/usr/lib/systemd/system/ik-teams-backgrounds.service \
+        /usr/lib/systemd/system/ik-teams-backgrounds.service
+    mkdir -p /usr/lib/systemd/system/multi-user.target.wants
+    ln -sf ../ik-teams-backgrounds.service \
+        /usr/lib/systemd/system/multi-user.target.wants/ik-teams-backgrounds.service
+
+    # Company defaults for the client. The app merges this with the user's own
+    # ~/.config/teams-for-linux/config.json, user keys winning, so these are
+    # defaults and not locks. The fetch interval is 0 because the manifest is
+    # static for the life of the image; multiAccount is on because people here
+    # are signed into more than one tenant.
+    install -d -m 0755 /etc/teams-for-linux
+    cat > /etc/teams-for-linux/config.json << 'EOF'
+{
+  "isCustomBackgroundEnabled": true,
+  "customBGServiceBaseUrl": "http://127.0.0.1:8421",
+  "customBGServiceConfigFetchInterval": 0,
+  "multiAccount": {
+    "enabled": true
+  }
+}
+EOF
+    chmod 644 /etc/teams-for-linux/config.json
+    python3 -c "import json;json.load(open('/etc/teams-for-linux/config.json'))"
+
+    echo "Teams video backgrounds installed (${TBG_SLOTS} slots available)"
+fi
+
+echo "Interligent Teams video backgrounds installation completed"

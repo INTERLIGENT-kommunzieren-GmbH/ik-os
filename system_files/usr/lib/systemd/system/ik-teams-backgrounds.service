@@ -1,0 +1,39 @@
+[Unit]
+Description=Company video backgrounds for Microsoft Teams
+Documentation=https://github.com/INTERLIGENT-kommunzieren-GmbH/ik-os
+# teams-for-linux redirects every Teams background-image request to this
+# service (customBGServiceBaseUrl in /etc/teams-for-linux/config.json). It
+# serves the company images in place of the Microsoft assets named in
+# slots.txt and proxies the rest, so the picker stays intact.
+After=network.target
+
+[Service]
+Type=exec
+ExecStart=/usr/bin/python3 -u /usr/libexec/ik-os/teams-background-server.py
+Restart=on-failure
+RestartSec=2
+
+# Nothing here needs an identity, a writable filesystem or any capability: it
+# reads company images out of /usr and talks to one CDN.
+DynamicUser=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
+# AF_INET/AF_INET6 only: it listens on loopback and fetches from Microsoft's
+# CDN. The listening socket is bound to 127.0.0.1 in the script.
+RestrictAddressFamilies=AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target
