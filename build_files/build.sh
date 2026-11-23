@@ -109,7 +109,8 @@ echo "Installing Sidra ${SIDRA_TAG}"
 
 curl -fsSL -o "$SIDRA_WORK/sidra.rpm" \
     "https://github.com/wimpysworld/sidra/releases/download/${SIDRA_TAG}/Sidra-${SIDRA_TAG}-linux-x86_64.rpm"
-rpm -K "$SIDRA_WORK/sidra.rpm"
+# --nosignature: RPM 6.1 (Fedora 45) fails -K on unsigned packages by default.
+rpm -K --nosignature "$SIDRA_WORK/sidra.rpm"
 
 # The RPM installs to /opt, which is a symlink to /var/opt here, and /var is
 # discarded by `ostree container commit` — installing it as-is would make the
@@ -599,7 +600,7 @@ echo "Installing teams-for-linux ${TFL_TAG}"
 
 curl -fsSL -o "$TFL_WORK/teams-for-linux.rpm" \
     "https://github.com/IsmaelMartinez/teams-for-linux/releases/download/${TFL_TAG}/teams-for-linux-${TFL_TAG#v}.x86_64.rpm"
-rpm -K "$TFL_WORK/teams-for-linux.rpm"
+rpm -K --nosignature "$TFL_WORK/teams-for-linux.rpm"
 
 # Same /opt trap as Sidra: /opt is a symlink to /var/opt and /var is discarded
 # by `ostree container commit`, so the payload is relocated into /usr/lib.
