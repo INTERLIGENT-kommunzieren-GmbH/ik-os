@@ -735,6 +735,15 @@ fi
 
 echo "Interligent Teams video backgrounds installation completed"
 
+### Fedora repo configs for the ISO builder
+# Fedora 45 moved the distro repo files from /etc/yum.repos.d to
+# /usr/share/dnf5/repos.d, but bootc-image-builder's anaconda-iso type still
+# reads only /etc/yum.repos.d and fails with "There are no enabled
+# repositories". Same-named files in /etc override /usr for dnf5, so copying
+# them changes nothing for dnf on deployed systems.
+# Drop once https://github.com/osbuild/image-builder/issues/2704 is fixed.
+cp -a /usr/share/dnf5/repos.d/fedora*.repo /etc/yum.repos.d/
+
 ### Clean up dnf state
 # The base image ships no /var/lib/dnf; the dnf5 installs above create repo
 # state (countme files) there and a lock dir in /run, which `bootc container
