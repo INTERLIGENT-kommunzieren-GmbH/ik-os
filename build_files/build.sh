@@ -112,9 +112,9 @@ curl -fsSL -o "$SIDRA_WORK/sidra.rpm" \
 # --nosignature: RPM 6.1 (Fedora 45) fails -K on unsigned packages by default.
 rpm -K --nosignature "$SIDRA_WORK/sidra.rpm"
 
-# The RPM installs to /opt, which is a symlink to /var/opt here, and /var is
-# discarded by `ostree container commit` — installing it as-is would make the
-# app vanish from deployed systems. Unpack it and relocate to /usr/lib instead.
+# The RPM installs to /opt, which is a symlink to /var/opt here, and bootc never
+# updates /var from the image on deployed systems — installing it as-is would
+# make the app go missing or stale. Unpack it and relocate to /usr/lib instead.
 (cd "$SIDRA_WORK" && rpm2cpio sidra.rpm | cpio -idm --quiet)
 mkdir -p /usr/lib/sidra
 cp -a "$SIDRA_WORK/opt/Sidra/." /usr/lib/sidra/
@@ -602,8 +602,8 @@ curl -fsSL -o "$TFL_WORK/teams-for-linux.rpm" \
     "https://github.com/IsmaelMartinez/teams-for-linux/releases/download/${TFL_TAG}/teams-for-linux-${TFL_TAG#v}.x86_64.rpm"
 rpm -K --nosignature "$TFL_WORK/teams-for-linux.rpm"
 
-# Same /opt trap as Sidra: /opt is a symlink to /var/opt and /var is discarded
-# by `ostree container commit`, so the payload is relocated into /usr/lib.
+# Same /opt trap as Sidra: /opt is a symlink to /var/opt and bootc never
+# updates /var from the image, so the payload is relocated into /usr/lib.
 (cd "$TFL_WORK" && rpm2cpio teams-for-linux.rpm | cpio -idm --quiet)
 mkdir -p /usr/lib/teams-for-linux
 cp -a "$TFL_WORK/opt/teams-for-linux/." /usr/lib/teams-for-linux/
@@ -734,3 +734,10 @@ EOF
 fi
 
 echo "Interligent Teams video backgrounds installation completed"
+
+### Clean up dnf state
+# The base image ships no /var/lib/dnf; the dnf5 installs above create repo
+# state (countme files) there and a lock dir in /run, which `bootc container
+# lint` flags as /var content without tmpfiles.d entries and as runtime-only
+# content in the image.
+rm -rf /var/lib/dnf /run/dnf

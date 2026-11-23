@@ -184,8 +184,8 @@ tag is resolved from the `/releases/latest` redirect, which (unlike the GitHub A
 to fail CI builds on.
 
 The RPM installs to `/opt`, which on this image is a symlink to `/var/opt`. Because
-`ostree container commit` discards `/var`, installing it directly would make the app disappear from
-deployed systems. The build therefore unpacks the RPM, relocates the payload to `/usr/lib/sidra`,
+bootc never updates `/var` from the image on deployed systems, installing it directly would make the
+app go missing or stale. The build therefore unpacks the RPM, relocates the payload to `/usr/lib/sidra`,
 symlinks `/usr/bin/sidra`, and rewrites the desktop entry's `Exec=` — the only file that hardcodes the
 old path.
 
